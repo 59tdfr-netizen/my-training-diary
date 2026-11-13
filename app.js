@@ -289,13 +289,16 @@ function getHistoricalMaxWeight(exerciseName) {
 }
 
 function renderHeatmap() {
+  const isMobile = window.innerWidth <= 768;
+  const lookbackDays = isMobile ? 83 : 364; // 12 недель на телефоне, 1 год на ПК
+
   const today = new Date();
   today.setHours(0,0,0,0);
-  const oneYearAgo = new Date(today);
-  oneYearAgo.setDate(today.getDate() - 364);
+  const startDate = new Date(today);
+  startDate.setDate(today.getDate() - lookbackDays);
   
-  const dayOfWeek = oneYearAgo.getDay() === 0 ? 6 : oneYearAgo.getDay() - 1;
-  oneYearAgo.setDate(oneYearAgo.getDate() - dayOfWeek);
+  const dayOfWeek = startDate.getDay() === 0 ? 6 : startDate.getDay() - 1;
+  startDate.setDate(startDate.getDate() - dayOfWeek);
 
   const counts = {};
   state.data.history.forEach(w => {
@@ -305,7 +308,7 @@ function renderHeatmap() {
   });
 
   let cellsHtml = '';
-  let d = new Date(oneYearAgo);
+  let d = new Date(startDate);
   let totalWeeks = 0;
 
   while (d <= today) {
@@ -326,16 +329,19 @@ function renderHeatmap() {
     d.setDate(d.getDate() + 1);
   }
 
+  const cellSize = isMobile ? 8 : 12;
+  const gapSize = isMobile ? 2 : 3;
+
   return `<div class="heatmap-container">
-    <div class="heatmap-grid" style="grid-template-columns: repeat(${totalWeeks}, 12px);">
+    <div class="heatmap-grid" style="grid-template-columns: repeat(${totalWeeks}, ${cellSize}px); gap: ${gapSize}px;">
       ${cellsHtml}
     </div>
     <div class="heatmap-legend">
       <span>Меньше</span>
-      <div class="heatmap-cell" data-level="0"></div>
-      <div class="heatmap-cell" data-level="1"></div>
-      <div class="heatmap-cell" data-level="2"></div>
-      <div class="heatmap-cell" data-level="3"></div>
+      <div class="heatmap-cell" data-level="0" style="width:${cellSize}px;height:${cellSize}px"></div>
+      <div class="heatmap-cell" data-level="1" style="width:${cellSize}px;height:${cellSize}px"></div>
+      <div class="heatmap-cell" data-level="2" style="width:${cellSize}px;height:${cellSize}px"></div>
+      <div class="heatmap-cell" data-level="3" style="width:${cellSize}px;height:${cellSize}px"></div>
       <span>Больше</span>
     </div>
   </div>`;
@@ -990,7 +996,7 @@ function exportBackup(){
   document.body.appendChild(a); a.click(); a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
   showToast('Резервная копия скачана', 'success');
-  render(); // Обновляем баннер на главной
+  render();
 }
 
 function validateBackup(data){
