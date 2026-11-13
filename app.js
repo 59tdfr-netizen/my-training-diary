@@ -43,12 +43,7 @@ const DEFAULT_PROGRAM = {
     "Если ты выполнил все подходы и повторения с запасом (мог бы сделать ещё 2–3 повтора), на следующей тренировке попробуй сделать на 1–2 повтора больше.",
     "Когда сможешь сделать верхний диапазон повторов во всех подходах — увеличь вес немного и возвращайся к нижней границе повторов."
   ],
-  goals: [
-    "Восстановить технику",
-    "Вернуться к системности",
-    "Почувствовать тело и нагрузку",
-    "Не гнаться за весом"
-  ],
+  goals: ["Восстановить технику", "Вернуться к системности", "Почувствовать тело и нагрузку", "Не гнаться за весом"],
   extra: [
     { title: "Суббота — Кардио", text: "Степпер 40–50 минут или прогулка быстрым шагом 40–60 минут. Кардио выполняется отдельно от силовых тренировок." },
     { title: "Воскресенье — Отдых", text: "Лёгкая прогулка и растяжка по желанию." }
@@ -92,6 +87,8 @@ const DEFAULT_PROGRAM = {
 
 /* ==================== ХРАНИЛИЩЕ ==================== */
 const STORAGE_KEY = 'training_diary_v1';
+let activeTimer = { exIdx: null, timeLeft: 0, intervalId: null, totalTime: 90 };
+
 const state = { view:'home', params:{}, data:null, editDraft:null, editMode:'current', uploadImage:null, historyDraft:null };
 
 function ensureIds(program){
@@ -111,9 +108,7 @@ function saveData(){
     state.data.meta = state.data.meta || {};
     state.data.meta.updatedAt = new Date().toISOString();
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state.data));
-  } catch(e){
-    showToast('Не удалось сохранить данные: ' + e.message, 'error');
-  }
+  } catch(e){ showToast('Не удалось сохранить данные: ' + e.message, 'error'); }
 }
 let saveTimer = null;
 function saveDebounced(){ clearTimeout(saveTimer); saveTimer = setTimeout(saveData, 300); }
@@ -122,22 +117,17 @@ function initData(){
   const raw = loadRaw();
   if (!raw){
     state.data = {
-      version: 1,
-      meta: { createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
-      program: deepClone(DEFAULT_PROGRAM),
-      programArchive: [],
-      history: [],
-      activeWorkout: null
+      version: 1, meta: { createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), lastBackupAt: new Date().toISOString() },
+      program: deepClone(DEFAULT_PROGRAM), programArchive: [], history: [], activeWorkout: null
     };
-    ensureIds(state.data.program);
-    saveData();
-    return;
+    ensureIds(state.data.program); saveData(); return;
   }
   raw.program = raw.program || deepClone(DEFAULT_PROGRAM);
   raw.programArchive = raw.programArchive || [];
   raw.history = raw.history || [];
   raw.activeWorkout = raw.activeWorkout || null;
   raw.meta = raw.meta || {};
+  if (!raw.meta.lastBackupAt) raw.meta.lastBackupAt = new Date().toISOString();
   ensureIds(raw.program);
   state.data = raw;
 }
@@ -148,23 +138,17 @@ function showToast(msg, type = 'info'){
   const t = $('#toast');
   t.textContent = msg; t.className = 'toast toast-' + type; t.hidden = false;
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => { t.hidden = true; }, 3500);
+  toastTimer = setTimeout(() => { t.hidden = true; }, 4000);
 }
 
 let modalResolve = null;
 let modalMode = 'confirm';
 function openModal(html, mode = 'confirm'){
-  return new Promise(resolve => {
-    modalMode = mode; modalResolve = resolve;
-    $('#modalContent').innerHTML = html;
-    $('#modal').hidden = false;
-  });
+  return new Promise(resolve => { modalMode = mode; modalResolve = resolve; $('#modalContent').innerHTML = html; $('#modal').hidden = false; });
 }
 function closeModal(value){
-  $('#modal').hidden = true;
-  $('#modalContent').innerHTML = '';
-  const r = modalResolve; modalResolve = null;
-  if (r) r(value);
+  $('#modal').hidden = true; $('#modalContent').innerHTML = '';
+  const r = modalResolve; modalResolve = null; if (r) r(value);
 }
 function confirmDialog(title, text, okLabel = 'Подтвердить', danger = false){
   return openModal(
@@ -175,19 +159,74 @@ function confirmDialog(title, text, okLabel = 'Подтвердить', danger =
      </div>`
   );
 }
-function promptDialog(title, defaultValue = '', label = 'Значение'){
-  return openModal(
-    `<h3>${escapeHtml(title)}</h3>
-     <label class="field"><span>${escapeHtml(label)}</span>
-       <input class="input" id="modalPromptInput" value="${escapeHtml(defaultValue)}"></label>
-     <div class="modal-actions">
-       <button class="btn btn-ghost" data-modal="cancel">Отмена</button>
-       <button class="btn btn-primary" data-modal="ok">OK</button>
-     </div>`, 'prompt'
-  ).then(v => {
-    setTimeout(() => { const i = $('#modalPromptInput'); if (i){ i.focus(); i.select(); } }, 30);
-    return v;
-  });
+
+/* ==================== ЗВУК ==================== */
+function playBeep() {
+  try {
+    const AudioContext = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContext) return;
+    const ctx = new AudioContext();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(800, ctx.currentTime);
+    gain.gain.setValueAtTime(0.5, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.5);
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start();
+    osc.stop(ctx.currentTime + 0.5);
+  } catch (e) { console.warn('Audio error', e); }
+}
+
+/* ==================== ТАЙМЕР ==================== */
+function startTimer(exIdx) {
+  if (activeTimer.intervalId) clearInterval(activeTimer.intervalId);
+  activeTimer.exIdx = exIdx;
+  activeTimer.timeLeft = activeTimer.totalTime;
+  
+  document.querySelectorAll('.btn-timer').forEach(btn => btn.classList.remove('running'));
+  const btn = document.getElementById('timer-btn-' + exIdx);
+  if (btn) btn.classList.add('running');
+
+  updateTimerDisplay();
+  
+  activeTimer.intervalId = setInterval(() => {
+    activeTimer.timeLeft--;
+    if (activeTimer.timeLeft <= 0) {
+      clearInterval(activeTimer.intervalId);
+      activeTimer.intervalId = null;
+      playBeep();
+      showToast('Отдых окончен!', 'success');
+      const btn = document.getElementById('timer-btn-' + activeTimer.exIdx);
+      if (btn) { btn.classList.remove('running'); btn.innerHTML = `⏱ Отдых ${activeTimer.totalTime}с`; }
+      const disp = document.getElementById('timer-disp-' + activeTimer.exIdx);
+      if (disp) disp.textContent = 'Готово!';
+      activeTimer.exIdx = null;
+      return;
+    }
+    updateTimerDisplay();
+  }, 1000);
+}
+
+function stopTimer(exIdx) {
+  if (activeTimer.intervalId) clearInterval(activeTimer.intervalId);
+  activeTimer.intervalId = null;
+  activeTimer.exIdx = null;
+  const btn = document.getElementById('timer-btn-' + exIdx);
+  if (btn) { btn.classList.remove('running'); btn.innerHTML = `⏱ Отдых ${activeTimer.totalTime}с`; }
+  const disp = document.getElementById('timer-disp-' + exIdx);
+  if (disp) disp.textContent = '';
+}
+
+function updateTimerDisplay() {
+  if (activeTimer.exIdx === null) return;
+  const btn = document.getElementById('timer-btn-' + activeTimer.exIdx);
+  if (btn) {
+    const m = Math.floor(activeTimer.timeLeft / 60);
+    const s = activeTimer.timeLeft % 60;
+    btn.innerHTML = `⏹ Стоп ${m}:${pad2(s)}`;
+  }
 }
 
 /* ==================== РЕНДЕР ==================== */
@@ -208,24 +247,16 @@ function render(){
   }
   app.innerHTML = html;
   $('#brandSub').textContent = state.data.program.name + ' • ' + (state.data.program.subtitle || '');
-  const navMap = { home:'home', workout:'home', edit:'edit', upload:'upload',
-    history:'history', 'history-detail':'history', 'history-edit':'history',
-    'exercise-history':'history', backup:'backup' };
+  const navMap = { home:'home', workout:'home', edit:'edit', upload:'upload', history:'history', 'history-detail':'history', 'history-edit':'history', 'exercise-history':'history', backup:'backup' };
   $$('#topnav .nav-btn').forEach(b => b.classList.toggle('active', b.dataset.view === navMap[state.view]));
-  window.scrollTo({ top: 0, behavior: 'instant' in window ? 'instant' : 'auto' });
-}
-
-function renderPreserveFocus(){
-  const active = document.activeElement;
-  const field = active && active.getAttribute && active.getAttribute('data-field');
-  const s = active && active.selectionStart, e = active && active.selectionEnd;
-  render();
-  if (field){
-    const el = document.querySelector(`[data-field="${field}"]`);
-    if (el){
-      el.focus();
-      if (s != null && el.setSelectionRange){ try{ el.setSelectionRange(s, e); }catch(_){} }
-    }
+  
+  if (activeTimer.exIdx !== null && state.view !== 'workout') stopTimer(activeTimer.exIdx);
+  if (activeTimer.exIdx !== null && state.view === 'workout') {
+     const btn = document.getElementById('timer-btn-' + activeTimer.exIdx);
+     if (btn) btn.classList.add('running');
+     updateTimerDisplay();
+  } else {
+     window.scrollTo({ top: 0, behavior: 'instant' in window ? 'instant' : 'auto' });
   }
 }
 
@@ -235,17 +266,79 @@ function getDayStatus(dayId){
   if (active && active.dayId === dayId) return 'in-progress';
   const weekStart = getWeekStart(new Date());
   const weekEnd = addDays(weekStart, 7);
-  const done = state.data.history.some(w => {
-    if (w.dayId !== dayId) return false;
-    const d = new Date(w.date);
-    return d >= weekStart && d < weekEnd;
-  });
+  const done = state.data.history.some(w => { if (w.dayId !== dayId) return false; const d = new Date(w.date); return d >= weekStart && d < weekEnd; });
   return done ? 'done' : 'not-started';
 }
-
 function getLastWorkoutForDay(dayId){
   const sorted = [...state.data.history].sort((a, b) => new Date(b.date) - new Date(a.date));
   return sorted.find(w => w.dayId === dayId) || null;
+}
+function getHistoricalMaxWeight(exerciseName) {
+  let max = 0;
+  state.data.history.forEach(w => {
+    w.exercises.forEach(ex => {
+      if (ex.name === exerciseName) {
+        ex.sets.forEach(s => {
+          const wgt = parseFloat(s.weight);
+          if (!isNaN(wgt) && wgt > max) max = wgt;
+        });
+      }
+    });
+  });
+  return max;
+}
+
+function renderHeatmap() {
+  const today = new Date();
+  today.setHours(0,0,0,0);
+  const oneYearAgo = new Date(today);
+  oneYearAgo.setDate(today.getDate() - 364);
+  
+  const dayOfWeek = oneYearAgo.getDay() === 0 ? 6 : oneYearAgo.getDay() - 1;
+  oneYearAgo.setDate(oneYearAgo.getDate() - dayOfWeek);
+
+  const counts = {};
+  state.data.history.forEach(w => {
+    const d = new Date(w.date);
+    const key = toDateKey(d);
+    counts[key] = (counts[key] || 0) + 1;
+  });
+
+  let cellsHtml = '';
+  let d = new Date(oneYearAgo);
+  let totalWeeks = 0;
+
+  while (d <= today) {
+    const key = toDateKey(d);
+    const c = counts[key] || 0;
+    let level = 0;
+    if (c === 1) level = 1;
+    else if (c === 2) level = 2;
+    else if (c >= 3) level = 3;
+
+    const isFuture = d > today;
+    if (d.getDay() === 1) totalWeeks++; 
+    
+    let title = fmtDate(d);
+    if (c > 0) title += ` (тренировок: ${c})`;
+
+    cellsHtml += `<div class="heatmap-cell" data-level="${isFuture ? 0 : level}" title="${title}"></div>`;
+    d.setDate(d.getDate() + 1);
+  }
+
+  return `<div class="heatmap-container">
+    <div class="heatmap-grid" style="grid-template-columns: repeat(${totalWeeks}, 12px);">
+      ${cellsHtml}
+    </div>
+    <div class="heatmap-legend">
+      <span>Меньше</span>
+      <div class="heatmap-cell" data-level="0"></div>
+      <div class="heatmap-cell" data-level="1"></div>
+      <div class="heatmap-cell" data-level="2"></div>
+      <div class="heatmap-cell" data-level="3"></div>
+      <span>Больше</span>
+    </div>
+  </div>`;
 }
 
 function renderHome(){
@@ -256,88 +349,62 @@ function renderHome(){
 
   if (active){
     html += `<div class="banner banner-info">
-      <div>
-        <strong>Незавершённая тренировка</strong>
-        <div class="muted small">${escapeHtml(active.dayName)} • начата ${fmtDateTime(active.startedAt)}</div>
-      </div>
+      <div><strong>Незавершённая тренировка</strong><div class="muted small">${escapeHtml(active.dayName)} • начата ${fmtDateTime(active.startedAt)}</div></div>
       <div class="banner-actions">
         <button class="btn btn-primary" data-action="resume-workout">Продолжить</button>
         <button class="btn btn-ghost" data-action="discard-workout">Отменить</button>
-      </div>
-    </div>`;
+      </div></div>`;
+  }
+
+  const lastBackup = new Date(state.data.meta.lastBackupAt || 0);
+  const daysSinceBackup = Math.floor((new Date() - lastBackup) / (1000 * 60 * 60 * 24));
+  if (daysSinceBackup > 14) {
+    html += `<div class="banner banner-warn">
+      <div><strong>Давно не сохраняли данные</strong><div class="muted small">Прошло ${daysSinceBackup} дней. Браузер может очистить память.</div></div>
+      <div class="banner-actions">
+        <button class="btn btn-primary" data-action="nav" data-view="backup">Сделать бэкап</button>
+      </div></div>`;
   }
 
   html += `<section class="section">
     <h2 class="section-title">Сводка прогресса</h2>
     <div class="stats">
-      <div class="stat">
-        <div class="stat-value">${stats.weekDone} <span class="stat-sub">из ${stats.weekPlanned}</span></div>
-        <div class="stat-label">Тренировок на этой неделе</div>
-      </div>
-      <div class="stat">
-        <div class="stat-value">${stats.percent}%</div>
-        <div class="stat-label">Выполнение за 4 недели</div>
-      </div>
-      <div class="stat">
-        <div class="stat-value">${stats.lastDate ? fmtDate(stats.lastDate) : '—'}</div>
-        <div class="stat-label">Последняя тренировка</div>
-      </div>
-      <div class="stat">
-        <div class="stat-value">${stats.totalDone}</div>
-        <div class="stat-label">Всего завершено</div>
-      </div>
+      <div class="stat"><div class="stat-value">${stats.weekDone} <span class="stat-sub">из ${stats.weekPlanned}</span></div><div class="stat-label">Тренировок на этой неделе</div></div>
+      <div class="stat"><div class="stat-value">${stats.percent}%</div><div class="stat-label">Выполнение за 4 недели</div></div>
+      <div class="stat"><div class="stat-value">${stats.lastDate ? fmtDate(stats.lastDate) : '—'}</div><div class="stat-label">Последняя тренировка</div></div>
+      <div class="stat"><div class="stat-value">${stats.totalDone}</div><div class="stat-label">Всего завершено</div></div>
     </div>
   </section>`;
 
-  if (prog.rules && prog.rules.length){
+  if (state.data.history.length > 0) {
     html += `<section class="section">
-      <h2 class="section-title">Общие правила</h2>
-      <div class="rules-card">
-        <ul class="rules-list">${prog.rules.map(r => `<li>${escapeHtml(r)}</li>`).join('')}</ul>
-      </div>
+      <h2 class="section-title">Календарь активности</h2>
+      ${renderHeatmap()}
     </section>`;
   }
 
-  html += `<section class="section">
-    <h2 class="section-title">План тренировок</h2>
-    <div class="day-grid">`;
+  if (prog.rules && prog.rules.length){
+    html += `<section class="section"><h2 class="section-title">Общие правила</h2><div class="rules-card"><ul class="rules-list">${prog.rules.map(r => `<li>${escapeHtml(r)}</li>`).join('')}</ul></div></section>`;
+  }
+
+  html += `<section class="section"><h2 class="section-title">План тренировок</h2><div class="day-grid">`;
   prog.days.forEach(day => { html += renderDayCard(day); });
   html += `</div></section>`;
 
   if (prog.extra && prog.extra.length){
-    html += `<section class="section">
-      <h2 class="section-title">Дополнительно</h2>
-      <div class="extra-grid">`;
-    prog.extra.forEach(it => {
-      html += `<div class="extra-card">
-        <div class="extra-title">${escapeHtml(it.title)}</div>
-        <div class="extra-text">${escapeHtml(it.text)}</div>
-      </div>`;
-    });
+    html += `<section class="section"><h2 class="section-title">Дополнительно</h2><div class="extra-grid">`;
+    prog.extra.forEach(it => { html += `<div class="extra-card"><div class="extra-title">${escapeHtml(it.title)}</div><div class="extra-text">${escapeHtml(it.text)}</div></div>`; });
     html += `</div></section>`;
   }
 
   if (prog.goals && prog.goals.length){
-    html += `<section class="section">
-      <h2 class="section-title">Цель на этап</h2>
-      <div class="rules-card">
-        <ul class="goals-list">${prog.goals.map(g => `<li>${escapeHtml(g)}</li>`).join('')}</ul>
-      </div>
-    </section>`;
+    html += `<section class="section"><h2 class="section-title">Цель на этап</h2><div class="rules-card"><ul class="goals-list">${prog.goals.map(g => `<li>${escapeHtml(g)}</li>`).join('')}</ul></div></section>`;
   }
-
   if (prog.notes && prog.notes.length){
-    html += `<section class="section">
-      <h2 class="section-title">Важные заметки</h2>
-      <div class="rules-card">
-        <ul class="notes-list">${prog.notes.map(n => `<li>${escapeHtml(n)}</li>`).join('')}</ul>
-      </div>
-    </section>`;
+    html += `<section class="section"><h2 class="section-title">Важные заметки</h2><div class="rules-card"><ul class="notes-list">${prog.notes.map(n => `<li>${escapeHtml(n)}</li>`).join('')}</ul></div></section>`;
   }
 
-  html += `<section class="section storage-note">
-    <p class="muted small">Данные хранятся в этом браузере. Для переноса на другое устройство или защиты от очистки кэша используйте
-    <a href="#" data-action="nav" data-view="backup">резервную копию</a>.</p></section>`;
+  html += `<section class="section storage-note"><p class="muted small">Данные хранятся в этом браузере. Для переноса или защиты от очистки кэша используйте <a href="#" data-action="nav" data-view="backup">резервную копию</a>.</p></section>`;
   return html;
 }
 
@@ -366,23 +433,14 @@ function renderDayCard(day){
   else statusHtml = '<span class="status-badge status-not-started">Не начата</span>';
 
   let actionsHtml;
-  if (isActive){
-    actionsHtml = `<button class="btn btn-primary btn-block" data-action="resume-workout">Продолжить тренировку</button>`;
-  } else if (active){
-    actionsHtml = `<button class="btn btn-ghost btn-block" disabled>Есть незавершённая тренировка</button>`;
-  } else if (lastWorkout){
-    actionsHtml = `<button class="btn btn-ghost" data-action="open-workout" data-id="${lastWorkout.id}">Открыть результат</button>
-      <button class="btn btn-primary" data-action="start-workout" data-day="${day.id}">Начать снова</button>`;
-  } else {
-    actionsHtml = `<button class="btn btn-primary btn-block" data-action="start-workout" data-day="${day.id}">Начать тренировку</button>`;
-  }
+  if (isActive){ actionsHtml = `<button class="btn btn-primary btn-block" data-action="resume-workout">Продолжить тренировку</button>`; }
+  else if (active){ actionsHtml = `<button class="btn btn-ghost btn-block" disabled>Есть незавершённая тренировка</button>`; }
+  else if (lastWorkout){ actionsHtml = `<button class="btn btn-ghost" data-action="open-workout" data-id="${lastWorkout.id}">Открыть результат</button><button class="btn btn-primary" data-action="start-workout" data-day="${day.id}">Начать снова</button>`; }
+  else { actionsHtml = `<button class="btn btn-primary btn-block" data-action="start-workout" data-day="${day.id}">Начать тренировку</button>`; }
 
   return `<div class="day-card day-card-${day.color || 'blue'}">
     <div class="day-card-header">
-      <div class="day-card-heading">
-        <div class="day-card-title">${escapeHtml(day.name)}</div>
-        <div class="day-card-focus">${escapeHtml(day.focus || '')}</div>
-      </div>
+      <div class="day-card-heading"><div class="day-card-title">${escapeHtml(day.name)}</div><div class="day-card-focus">${escapeHtml(day.focus || '')}</div></div>
       ${statusHtml}
     </div>
     <ul class="ex-list">${exHtml}</ul>
@@ -410,10 +468,7 @@ function renderWorkout(){
   if (!w) return emptyState('Нет активной тренировки', 'Вернитесь на главный экран и начните тренировку.', 'home');
   let html = `<section class="section">
     <div class="workout-header">
-      <div>
-        <h2 class="section-title">${escapeHtml(w.dayName)} — ${escapeHtml(w.focus || '')}</h2>
-        <div class="muted small">Начата: ${fmtDateTime(w.startedAt)}</div>
-      </div>
+      <div><h2 class="section-title">${escapeHtml(w.dayName)} — ${escapeHtml(w.focus || '')}</h2><div class="muted small">Начата: ${fmtDateTime(w.startedAt)}</div></div>
       <div class="workout-header-actions">
         <button class="btn btn-ghost" data-action="cancel-workout">Отменить тренировку</button>
         <button class="btn btn-primary" data-action="finish-workout">Завершить тренировку</button>
@@ -430,36 +485,39 @@ function renderWorkoutExercise(ex, idx){
   const isKg = ex.unit === 'kg';
   const showSingleWeight = isKg && !ex.noWeight && !ex.perSetWeight;
 
+  const pr = getHistoricalMaxWeight(ex.name);
+  let prHtml = '';
+  let currentWeight = parseFloat(ex.weight);
+  if (!isNaN(currentWeight) && currentWeight > pr && pr > 0) {
+      prHtml = `<span class="pr-badge">🏆 Рекорд: ${currentWeight} кг</span>`;
+  }
+
   let setsHtml = '';
   ex.sets.forEach((s, i) => {
     let weightInput = '';
     if (isKg && !ex.noWeight && ex.perSetWeight){
-      weightInput = `<label class="set-input-group">
-        <input type="number" min="0" step="0.5" class="input input-sm"
-          data-field="weight" data-ex="${idx}" data-set="${i}" value="${escapeHtml(s.weight || '')}"
-          inputmode="decimal" placeholder="—">
-        <span class="unit">кг</span>
-      </label>`;
+      weightInput = `<label class="set-input-group"><input type="number" min="0" step="0.5" class="input input-sm" data-field="weight" data-ex="${idx}" data-set="${i}" value="${escapeHtml(s.weight || '')}" inputmode="decimal" placeholder="—"><span class="unit">кг</span></label>`;
     }
     setsHtml += `<div class="set-row">
       <div class="set-label">Подход ${i + 1}</div>
       <div class="set-inputs">
         ${weightInput}
-        <label class="set-input-group">
-          <input type="number" min="0" step="1" class="input input-sm"
-            data-field="reps" data-ex="${idx}" data-set="${i}" value="${escapeHtml(s.reps || '')}"
-            inputmode="numeric" placeholder="—">
-          <span class="unit">${unitLabel}</span>
-        </label>
+        <label class="set-input-group"><input type="number" min="0" step="1" class="input input-sm" data-field="reps" data-ex="${idx}" data-set="${i}" value="${escapeHtml(s.reps || '')}" inputmode="numeric" placeholder="—"><span class="unit">${unitLabel}</span></label>
       </div>
     </div>`;
   });
 
   return `<div class="exercise-card">
     <div class="exercise-header">
-      <div class="exercise-name">${escapeHtml(ex.name)}</div>
-      <div class="exercise-plan">План: ${ex.plannedSets} × ${escapeHtml(ex.plannedReps)}${ex.unit === 'sec' ? ' сек' : ''}</div>
-      ${ex.note ? `<div class="exercise-note">${escapeHtml(ex.note)}</div>` : ''}
+      <div class="exercise-title-wrap">
+        <div class="exercise-name">${escapeHtml(ex.name)} ${prHtml}</div>
+        <div class="exercise-plan">План: ${ex.plannedSets} × ${escapeHtml(ex.plannedReps)}${ex.unit === 'sec' ? ' сек' : ''}</div>
+        ${ex.note ? `<div class="exercise-note">${escapeHtml(ex.note)}</div>` : ''}
+      </div>
+      <div style="text-align:right">
+        <button class="btn btn-timer btn-sm" id="timer-btn-${idx}" data-action="toggle-timer" data-ex="${idx}">⏱ Отдых ${activeTimer.totalTime}с</button>
+        <div class="muted small" id="timer-disp-${idx}" style="margin-top:4px; font-weight:600"></div>
+      </div>
     </div>
     ${isKg ? `<div class="exercise-controls">
       <label class="check"><input type="checkbox" data-action="toggle-no-weight" data-ex="${idx}" ${ex.noWeight ? 'checked' : ''}> Без веса</label>
@@ -468,16 +526,14 @@ function renderWorkoutExercise(ex, idx){
     ${showSingleWeight ? `<div class="exercise-weight">
       <span class="weight-label">Рабочий вес:</span>
       <label class="weight-input-wrap">
-        <input type="number" min="0" step="0.5" class="input" data-field="weight" data-ex="${idx}"
-          value="${escapeHtml(ex.weight || '')}" inputmode="decimal" placeholder="—" style="max-width:110px">
+        <input type="number" min="0" step="0.5" class="input" data-field="weight" data-ex="${idx}" value="${escapeHtml(ex.weight || '')}" inputmode="decimal" placeholder="—" style="max-width:110px">
         <span class="unit">кг</span>
       </label>
     </div>` : ''}
     <div class="sets">${setsHtml}</div>
     <div class="exercise-comment">
       <label class="field-inline"><span class="weight-label">Комментарий:</span>
-        <input type="text" class="input" data-field="comment" data-ex="${idx}"
-          value="${escapeHtml(ex.comment || '')}" placeholder="необязательно"></label>
+        <input type="text" class="input" data-field="comment" data-ex="${idx}" value="${escapeHtml(ex.comment || '')}" placeholder="необязательно"></label>
     </div>
   </div>`;
 }
@@ -487,10 +543,7 @@ function renderHistory(){
   const history = [...state.data.history].sort((a, b) => new Date(b.date) - new Date(a.date));
   const f = state.params.historyFilter || { q:'', from:'', to:'' };
   let filtered = history;
-  if (f.q){
-    const q = f.q.toLowerCase();
-    filtered = filtered.filter(w => w.exercises.some(ex => ex.name.toLowerCase().includes(q)));
-  }
+  if (f.q){ const q = f.q.toLowerCase(); filtered = filtered.filter(w => w.exercises.some(ex => ex.name.toLowerCase().includes(q))); }
   if (f.from) filtered = filtered.filter(w => toDateKey(new Date(w.date)) >= f.from);
   if (f.to) filtered = filtered.filter(w => toDateKey(new Date(w.date)) <= f.to);
 
@@ -518,10 +571,7 @@ function renderHistory(){
   }
 
   return `<section class="section">
-    <div class="section-header-row">
-      <h2 class="section-title">История тренировок</h2>
-      <button class="btn btn-ghost" data-action="nav" data-view="home">На главный экран</button>
-    </div>
+    <div class="section-header-row"><h2 class="section-title">История тренировок</h2><button class="btn btn-ghost" data-action="nav" data-view="home">На главный экран</button></div>
     <div class="filters">
       <input type="search" class="input" placeholder="Поиск по упражнению" data-field="history-q" value="${escapeHtml(f.q)}">
       <label class="field-inline"><span class="muted small">С</span><input type="date" class="input" data-field="history-from" value="${f.from}"></label>
@@ -538,10 +588,7 @@ function renderHistoryDetail(id){
   let exHtml = '';
   w.exercises.forEach(ex => {
     exHtml += `<div class="history-ex">
-      <div class="history-ex-name">
-        ${escapeHtml(ex.name)}
-        <button class="ex-link" data-action="open-exercise-history" data-name="${escapeHtml(ex.name)}">Прогресс</button>
-      </div>
+      <div class="history-ex-name">${escapeHtml(ex.name)}<button class="ex-link" data-action="open-exercise-history" data-name="${escapeHtml(ex.name)}">Прогресс</button></div>
       <div class="sets-table">
         ${ex.sets.map((s, i) => `<div class="set-line">
           <span class="muted small">Подход ${i + 1}</span>
@@ -561,9 +608,7 @@ function renderHistoryDetail(id){
     </div>
     <div class="muted small">${escapeHtml(w.focus || '')} • завершена ${fmtDateTime(w.date)}</div>
     <div class="history-detail">${exHtml}</div>
-    <div class="section-actions">
-      <button class="btn btn-danger" data-action="delete-workout" data-id="${w.id}">Удалить тренировку</button>
-    </div>
+    <div class="section-actions"><button class="btn btn-danger" data-action="delete-workout" data-id="${w.id}">Удалить тренировку</button></div>
   </section>`;
 }
 
@@ -584,8 +629,7 @@ function renderHistoryEdit(id){
           </div></div>`).join('')}
       </div>
       <div class="exercise-comment">
-        <label class="field-inline"><span class="weight-label">Комментарий:</span>
-          <input type="text" class="input" data-field="he-comment" data-ex="${i}" value="${escapeHtml(ex.comment || '')}"></label>
+        <label class="field-inline"><span class="weight-label">Комментарий:</span><input type="text" class="input" data-field="he-comment" data-ex="${i}" value="${escapeHtml(ex.comment || '')}"></label>
       </div></div>`;
   });
   return `<section class="section">
@@ -636,10 +680,7 @@ function renderExerciseHistory(name){
     : `<div class="empty-state"><div class="empty-title">Пока нет данных</div><div class="empty-text">Выполните это упражнение хотя бы один раз.</div></div>`;
 
   return `<section class="section">
-    <div class="section-header-row">
-      <h2 class="section-title">Прогресс: ${escapeHtml(name)}</h2>
-      <button class="btn btn-ghost" data-action="nav" data-view="history">К истории</button>
-    </div>
+    <div class="section-header-row"><h2 class="section-title">Прогресс: ${escapeHtml(name)}</h2><button class="btn btn-ghost" data-action="nav" data-view="history">К истории</button></div>
     ${chart}
     <div class="history-list" style="margin-top:1rem">${list}</div>
   </section>`;
@@ -663,8 +704,7 @@ function renderChart(points, title){
     <line x1="${P}" y1="${H - P}" x2="${W - P}" y2="${H - P}" stroke="#E1E6EC"/>
     <line x1="${P}" y1="${P}" x2="${P}" y2="${H - P}" stroke="#E1E6EC"/>
     <path d="${path}" fill="none" stroke="#2878C8" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>
-    ${dots}${xLabels}
-    <text x="${P}" y="16" font-size="12" fill="#687586">${escapeHtml(title)}</text>
+    ${dots}${xLabels}<text x="${P}" y="16" font-size="12" fill="#687586">${escapeHtml(title)}</text>
   </svg>`;
 }
 
@@ -672,15 +712,9 @@ function renderChart(points, title){
 function renderEdit(){
   const d = state.editDraft;
   if (!d) return emptyState('Редактор не загружен', 'Вернитесь на главную и откройте редактор заново.', 'home');
-
   let html = '';
-  if (state.editMode === 'new'){
-    html += `<div class="edit-banner">Режим: <strong>новая программа</strong>. Текущая программа будет сохранена в архив, история тренировок не изменится.</div>`;
-  }
-  if (state.uploadImage){
-    html += `<details class="image-ref" open><summary>Фото новой программы (для сверки)</summary>
-      <img src="${state.uploadImage}" alt="Загруженное фото программы"></details>`;
-  }
+  if (state.editMode === 'new'){ html += `<div class="edit-banner">Режим: <strong>новая программа</strong>. Текущая программа будет сохранена в архив, история тренировок не изменится.</div>`; }
+  if (state.uploadImage){ html += `<details class="image-ref" open><summary>Фото новой программы (для сверки)</summary><img src="${state.uploadImage}" alt="Загруженное фото программы"></details>`; }
 
   html += `<section class="section">
     <div class="section-header-row">
@@ -692,10 +726,8 @@ function renderEdit(){
     </div>
     <div class="edit-program">
       <div class="edit-day">
-        <label class="field"><span>Название программы</span>
-          <input class="input" data-field="program-name" value="${escapeHtml(d.name || '')}"></label>
-        <label class="field"><span>Подзаголовок</span>
-          <input class="input" data-field="program-subtitle" value="${escapeHtml(d.subtitle || '')}"></label>
+        <label class="field"><span>Название программы</span><input class="input" data-field="program-name" value="${escapeHtml(d.name || '')}"></label>
+        <label class="field"><span>Подзаголовок</span><input class="input" data-field="program-subtitle" value="${escapeHtml(d.subtitle || '')}"></label>
       </div>`;
 
   d.days.forEach((day, di) => {
@@ -732,9 +764,7 @@ function renderEdit(){
     });
     html += `<button class="edit-add" data-action="add-ex" data-day="${di}">+ Добавить упражнение</button></div>`;
   });
-
-  html += `<button class="btn btn-ghost" data-action="add-day">+ Добавить тренировочный день</button>
-    </div></section>`;
+  html += `<button class="btn btn-ghost" data-action="add-day">+ Добавить тренировочный день</button></div></section>`;
   return html;
 }
 
@@ -759,25 +789,15 @@ function commitEditDraftFromInput(t){
 /* ==================== ЗАГРУЗКА ПРОГРАММЫ ==================== */
 function renderUpload(){
   let html = `<section class="section">
-    <div class="section-header-row">
-      <h2 class="section-title">Загрузить новую программу</h2>
-      <button class="btn btn-ghost" data-action="nav" data-view="home">На главный экран</button>
-    </div>
+    <div class="section-header-row"><h2 class="section-title">Загрузить новую программу</h2><button class="btn btn-ghost" data-action="nav" data-view="home">На главный экран</button></div>
     <div class="upload-box">
       <p>Выберите фотографию или изображение программы со своего устройства.</p>
       <input type="file" accept="image/*" id="programImage" class="input" style="max-width:360px;margin:0 auto">
-      <p class="muted small" style="margin-top:.8rem">
-        Автоматическое распознавание фото без внешнего платного API невозможно, поэтому после загрузки
-        вы заполните структуру вручную — форма откроется с текущей программой как основой.
-        Это честно и безопасно: ничего не заменится без вашего подтверждения.
-      </p>
+      <p class="muted small" style="margin-top:.8rem">Автоматическое распознавание фото без внешнего платного API невозможно, поэтому после загрузки вы заполните структуру вручную.</p>
     </div>`;
   if (state.uploadImage){
     html += `<div class="upload-preview"><img src="${state.uploadImage}" alt="Предпросмотр"></div>`;
-    html += `<div class="section-actions">
-      <button class="btn btn-primary" data-action="start-new-program">Заполнить программу по фото</button>
-      <button class="btn btn-ghost" data-action="clear-upload-image">Убрать фото</button>
-    </div>`;
+    html += `<div class="section-actions"><button class="btn btn-primary" data-action="start-new-program">Заполнить программу по фото</button><button class="btn btn-ghost" data-action="clear-upload-image">Убрать фото</button></div>`;
   }
   html += `<p class="muted small" style="margin-top:1rem">Старая программа будет сохранена в архиве. История выполненных тренировок не пострадает.</p>
   </section>`;
@@ -787,35 +807,26 @@ function renderUpload(){
 /* ==================== РЕЗЕРВНАЯ КОПИЯ ==================== */
 function renderBackup(){
   return `<section class="section">
-    <div class="section-header-row">
-      <h2 class="section-title">Резервная копия</h2>
-      <button class="btn btn-ghost" data-action="nav" data-view="home">На главный экран</button>
-    </div>
-    <div class="banner banner-warn">
-      <div>Данные хранятся в этом браузере. Очистка кэша или смена устройства приведут к потере. Регулярно делайте резервную копию.</div>
-    </div>
+    <div class="section-header-row"><h2 class="section-title">Резервная копия</h2><button class="btn btn-ghost" data-action="nav" data-view="home">На главный экран</button></div>
+    <div class="banner banner-warn"><div>Данные хранятся в этом браузере. Очистка кэша или смена устройства приведут к потере. Регулярно делайте резервную копию.</div></div>
     <div class="backup-grid">
       <div class="backup-card">
-        <h3>Экспорт</h3>
-        <p class="muted">Скачать программу, историю и настройки в JSON-файл.</p>
+        <h3>Экспорт</h3><p class="muted">Скачать программу, историю и настройки в JSON-файл.</p>
         <button class="btn btn-primary" data-action="export">Скачать резервную копию</button>
       </div>
       <div class="backup-card">
-        <h3>Импорт</h3>
-        <p class="muted">Загрузить ранее сохранённый JSON. Перед заменой данных будет предпросмотр.</p>
+        <h3>Импорт</h3><p class="muted">Загрузить ранее сохранённый JSON. Перед заменой данных будет предпросмотр.</p>
         <input type="file" accept="application/json,.json" id="importFile" class="input">
         <div id="importPreview"></div>
       </div>
     </div>
     <div class="backup-card" style="margin-top:1rem">
-      <h3>Опасная зона</h3>
-      <p class="muted">Полностью удалить все данные приложения из этого браузера.</p>
+      <h3>Опасная зона</h3><p class="muted">Полностью удалить все данные приложения из этого браузера.</p>
       <button class="btn btn-danger" data-action="reset-all">Сбросить все данные</button>
     </div>
   </section>`;
 }
 
-/* ==================== ПУСТОЕ СОСТОЯНИЕ ==================== */
 function emptyState(title, text, backView){
   return `<div class="empty-state" style="margin-top:2rem">
     <div class="empty-title">${escapeHtml(title)}</div>
@@ -849,9 +860,7 @@ function findLastExerciseRecord(exerciseId, name){
 function startWorkout(dayId){
   const day = state.data.program.days.find(d => d.id === dayId);
   if (!day){ showToast('Тренировочный день не найден', 'error'); return; }
-  if (state.data.activeWorkout){
-    showToast('Уже есть незавершённая тренировка. Завершите или отмените её.', 'error'); return;
-  }
+  if (state.data.activeWorkout){ showToast('Уже есть незавершённая тренировка. Завершите или отмените её.', 'error'); return; }
   const exercises = day.exercises.map(ex => {
     const lastW = findLastExerciseRecord(ex.id, ex.name);
     const sets = [];
@@ -864,69 +873,71 @@ function startWorkout(dayId){
       comment: '', sets
     };
   });
-  state.data.activeWorkout = {
-    id: uid(), dayId: day.id, dayName: day.name, focus: day.focus,
-    startedAt: new Date().toISOString(), exercises
-  };
-  saveData(); state.view = 'workout'; render();
-  showToast('Тренировка начата', 'success');
+  state.data.activeWorkout = { id: uid(), dayId: day.id, dayName: day.name, focus: day.focus, startedAt: new Date().toISOString(), exercises };
+  saveData(); state.view = 'workout'; render(); showToast('Тренировка начата', 'success');
 }
 
 async function finishWorkout(){
   const w = state.data.activeWorkout; if (!w) return;
   const skipped = w.exercises.filter(ex => !ex.sets.some(s => s.reps !== '' && s.reps != null));
-  const partial = w.exercises.filter(ex => {
-    const filled = ex.sets.filter(s => s.reps !== '' && s.reps != null).length;
-    return filled > 0 && filled < ex.sets.length;
+  const partial = w.exercises.filter(ex => { const filled = ex.sets.filter(s => s.reps !== '' && s.reps != null).length; return filled > 0 && filled < ex.sets.length; });
+  let newPRs = [];
+
+  w.exercises.forEach(ex => {
+      const pr = getHistoricalMaxWeight(ex.name);
+      ex.sets.forEach(s => {
+          const wgt = parseFloat(ex.perSetWeight ? s.weight : ex.weight);
+          if (ex.unit === 'kg' && !ex.noWeight && !isNaN(wgt) && wgt > pr && pr > 0) {
+              if(!newPRs.includes(ex.name)) newPRs.push(`${ex.name} (${wgt} кг)`);
+          }
+      });
   });
+
   let html = `<h3>Завершить тренировку?</h3><div class="summary">`;
   w.exercises.forEach(ex => {
     const filled = ex.sets.filter(s => s.reps !== '' && s.reps != null).length;
     html += `<div class="summary-ex ${filled === 0 ? 'skipped' : ''}">
       <div class="summary-name">${escapeHtml(ex.name)}${filled === 0 ? '<span class="tag">пропущено</span>' : ''}</div>
-      <div>${ex.sets.map(s => {
-        const wgt = ex.unit === 'kg' && !ex.noWeight ? ((s.weight || ex.weight || '—') + ' кг × ') : '';
-        return `<span class="summary-set">${wgt}${s.reps || '—'}${ex.unit === 'sec' ? ' сек' : ''}</span>`;
-      }).join('')}</div></div>`;
+      <div>${ex.sets.map(s => { const wgt = ex.unit === 'kg' && !ex.noWeight ? ((s.weight || ex.weight || '—') + ' кг × ') : ''; return `<span class="summary-set">${wgt}${s.reps || '—'}${ex.unit === 'sec' ? ' сек' : ''}</span>`; }).join('')}</div></div>`;
   });
   html += `</div>`;
   if (skipped.length) html += `<p class="warn">Пропущено упражнений: ${skipped.length}. Они не попадут в историю как выполненные.</p>`;
   if (partial.length) html += `<p class="warn">Не полностью заполнено упражнений: ${partial.length}.</p>`;
-  html += `<div class="modal-actions">
-    <button class="btn btn-ghost" data-modal="cancel">Вернуться</button>
-    <button class="btn btn-primary" data-modal="ok">Завершить и сохранить</button></div>`;
+  
+  if (newPRs.length > 0) {
+      html += `<div class="banner banner-info" style="margin-top:10px; margin-bottom:0">
+        <div><strong>🏆 Новые рекорды!</strong><div class="muted small">${newPRs.join(', ')}</div></div>
+      </div>`;
+  }
+
+  html += `<div class="modal-actions"><button class="btn btn-ghost" data-modal="cancel">Вернуться</button><button class="btn btn-primary" data-modal="ok">Завершить и сохранить</button></div>`;
 
   const ok = await openModal(html);
   if (!ok) return;
 
-  const exercises = w.exercises
-    .filter(ex => ex.sets.some(s => s.reps !== '' && s.reps != null))
-    .map(ex => ({
-      exerciseId: ex.exerciseId, name: ex.name, unit: ex.unit, noWeight: ex.noWeight,
-      comment: ex.comment || '',
-      sets: ex.sets.map(s => ({
-        weight: (ex.unit === 'kg' && !ex.noWeight) ? (ex.perSetWeight ? (s.weight || '') : (ex.weight || '')) : '',
-        reps: s.reps
-      })).filter(s => s.reps !== '' && s.reps != null)
-    }));
+  const exercises = w.exercises.filter(ex => ex.sets.some(s => s.reps !== '' && s.reps != null)).map(ex => ({
+      exerciseId: ex.exerciseId, name: ex.name, unit: ex.unit, noWeight: ex.noWeight, comment: ex.comment || '',
+      sets: ex.sets.map(s => ({ weight: (ex.unit === 'kg' && !ex.noWeight) ? (ex.perSetWeight ? (s.weight || '') : (ex.weight || '')) : '', reps: s.reps })).filter(s => s.reps !== '' && s.reps != null)
+  }));
 
   if (!exercises.length){ showToast('Нельзя завершить тренировку без единого выполненного упражнения', 'error'); return; }
 
-  const record = {
-    id: w.id, date: new Date().toISOString(), dayId: w.dayId,
-    dayName: w.dayName, focus: w.focus, exercises, comment: ''
-  };
+  const record = { id: w.id, date: new Date().toISOString(), dayId: w.dayId, dayName: w.dayName, focus: w.focus, exercises, comment: '' };
   state.data.history.push(record);
   state.data.activeWorkout = null;
-  saveData();
-  state.view = 'history-detail'; state.params = { id: record.id }; render();
-  showToast('Тренировка сохранена в историю', 'success');
+  if (activeTimer.intervalId) clearInterval(activeTimer.intervalId);
+  saveData(); state.view = 'history-detail'; state.params = { id: record.id }; render();
+  
+  if (newPRs.length > 0) showToast('🏆 Поздравляем с новыми рекордами!', 'success');
+  else showToast('Тренировка сохранена в историю', 'success');
 }
 
 async function discardWorkout(){
   const ok = await confirmDialog('Отменить тренировку?', 'Введённые результаты будут потеряны.', 'Отменить тренировку', true);
   if (!ok) return;
-  state.data.activeWorkout = null; saveData(); state.view = 'home'; render();
+  state.data.activeWorkout = null; 
+  if (activeTimer.intervalId) clearInterval(activeTimer.intervalId);
+  saveData(); state.view = 'home'; render();
 }
 
 async function deleteWorkout(id){
@@ -935,11 +946,9 @@ async function deleteWorkout(id){
   state.data.history = state.data.history.filter(w => w.id !== id);
   saveData();
   if (state.view === 'history-detail'){ state.view = 'history'; state.params = {}; }
-  render();
-  showToast('Запись удалена', 'success');
+  render(); showToast('Запись удалена', 'success');
 }
 
-/* ==================== РЕДАКТОР: ДЕЙСТВИЯ ==================== */
 function openEditor(mode){
   state.editDraft = deepClone(state.data.program);
   ensureIds(state.editDraft);
@@ -948,55 +957,40 @@ function openEditor(mode){
 }
 
 async function saveProgram(){
-  const d = state.editDraft;
-  if (!d) return;
+  const d = state.editDraft; if (!d) return;
   if (!d.name || !d.name.trim()){ showToast('Укажите название программы', 'error'); return; }
   if (!d.days.length){ showToast('Добавьте хотя бы один тренировочный день', 'error'); return; }
   for (const day of d.days){
     if (!day.name || !day.name.trim()){ showToast('У каждого дня должно быть название', 'error'); return; }
     if (!day.exercises.length){ showToast('В дне «' + day.name + '» нет упражнений', 'error'); return; }
   }
-
   if (state.editMode === 'new'){
-    const ok = await confirmDialog('Заменить текущую программу?',
-      'Текущая программа будет сохранена в архив. История тренировок останется без изменений.',
-      'Заменить программу');
+    const ok = await confirmDialog('Заменить текущую программу?', 'Текущая программа будет сохранена в архив. История тренировок останется без изменений.', 'Заменить программу');
     if (!ok) return;
     state.data.programArchive.push({ program: deepClone(state.data.program), archivedAt: new Date().toISOString() });
     state.data.program = deepClone(d);
-  } else {
-    state.data.program = deepClone(d);
-  }
+  } else { state.data.program = deepClone(d); }
   ensureIds(state.data.program);
-  saveData();
-  state.editDraft = null; state.uploadImage = null; state.editMode = 'current';
-  state.view = 'home'; render();
-  showToast('Программа сохранена', 'success');
+  saveData(); state.editDraft = null; state.uploadImage = null; state.editMode = 'current'; state.view = 'home'; render(); showToast('Программа сохранена', 'success');
 }
 
 function cancelEdit(){
-  state.editDraft = null; state.uploadImage = null; state.editMode = 'current';
-  state.view = 'home'; render();
+  state.editDraft = null; state.uploadImage = null; state.editMode = 'current'; state.view = 'home'; render();
 }
 
-/* ==================== ЭКСПОРТ/ИМПОРТ ==================== */
 function exportBackup(){
-  const data = {
-    version: 1, exportedAt: new Date().toISOString(),
-    app: 'training-diary',
-    program: state.data.program,
-    programArchive: state.data.programArchive,
-    history: state.data.history,
-    meta: state.data.meta
-  };
+  state.data.meta.lastBackupAt = new Date().toISOString();
+  saveData();
+
+  const data = { version: 1, exportedAt: new Date().toISOString(), app: 'training-diary', program: state.data.program, programArchive: state.data.programArchive, history: state.data.history, meta: state.data.meta };
   const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
-  a.href = url;
-  a.download = 'trenirovki-backup-' + toDateKey(new Date()) + '.json';
+  a.href = url; a.download = 'trenirovki-backup-' + toDateKey(new Date()) + '.json';
   document.body.appendChild(a); a.click(); a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
   showToast('Резервная копия скачана', 'success');
+  render(); // Обновляем баннер на главной
 }
 
 function validateBackup(data){
@@ -1005,9 +999,7 @@ function validateBackup(data){
   if (!Array.isArray(data.history)) return 'В файле нет истории тренировок.';
   for (const day of data.program.days){
     if (!day.name || !Array.isArray(day.exercises)) return 'Повреждена структура тренировочного дня.';
-    for (const ex of day.exercises){
-      if (!ex.name || typeof ex.sets !== 'number') return 'Повреждена структура упражнения.';
-    }
+    for (const ex of day.exercises){ if (!ex.name || typeof ex.sets !== 'number') return 'Повреждена структура упражнения.'; }
   }
   return null;
 }
@@ -1019,8 +1011,7 @@ function handleImportFile(file){
       const data = JSON.parse(reader.result);
       const err = validateBackup(data);
       if (err){ showToast('Ошибка импорта: ' + err, 'error'); return; }
-      const preview = `
-        <div class="import-preview">
+      const preview = `<div class="import-preview">
           <div><strong>Файл:</strong> ${escapeHtml(file.name)}</div>
           <div><strong>Программа:</strong> ${escapeHtml(data.program.name || '—')} (${data.program.days.length} дней)</div>
           <div><strong>Записей истории:</strong> ${data.history.length}</div>
@@ -1028,36 +1019,23 @@ function handleImportFile(file){
         </div>`;
       $('#importPreview').innerHTML = preview;
       askImportConfirmation(data);
-    } catch(e){
-      showToast('Не удалось прочитать файл: ' + e.message, 'error');
-    }
+    } catch(e){ showToast('Не удалось прочитать файл: ' + e.message, 'error'); }
   };
   reader.readAsText(file);
 }
 
 async function askImportConfirmation(data){
-  const ok = await confirmDialog('Импортировать резервную копию?',
-    'Текущая программа и вся история будут заменены данными из файла. Это действие необратимо. Продолжить?',
-    'Импортировать');
+  const ok = await confirmDialog('Импортировать резервную копию?', 'Текущая программа и вся история будут заменены данными из файла. Это действие необратимо. Продолжить?', 'Импортировать');
   if (!ok) return;
-  state.data.program = data.program;
-  state.data.programArchive = data.programArchive || [];
-  state.data.history = data.history;
-  state.data.meta = data.meta || state.data.meta;
-  ensureIds(state.data.program);
-  state.data.activeWorkout = null;
-  saveData();
-  state.view = 'home'; render();
-  showToast('Данные импортированы', 'success');
+  state.data.program = data.program; state.data.programArchive = data.programArchive || []; state.data.history = data.history;
+  state.data.meta = data.meta || state.data.meta; ensureIds(state.data.program); state.data.activeWorkout = null;
+  saveData(); state.view = 'home'; render(); showToast('Данные импортированы', 'success');
 }
 
 async function resetAll(){
-  const ok = await confirmDialog('Сбросить все данные?',
-    'Будут удалены программа, история и архив. Рекомендуется сначала экспортировать резервную копию. Продолжить?',
-    'Удалить всё', true);
+  const ok = await confirmDialog('Сбросить все данные?', 'Будут удалены программа, история и архив. Рекомендуется сначала экспортировать резервную копию. Продолжить?', 'Удалить всё', true);
   if (!ok) return;
-  localStorage.removeItem(STORAGE_KEY);
-  location.reload();
+  localStorage.removeItem(STORAGE_KEY); location.reload();
 }
 
 /* ==================== ОБРАБОТЧИКИ ==================== */
@@ -1065,13 +1043,9 @@ async function handleClick(e){
   const modalBtn = e.target.closest('[data-modal]');
   if (modalBtn){
     const v = modalBtn.dataset.modal;
-    if (v === 'ok'){
-      if (modalMode === 'prompt'){ const inp = $('#modalPromptInput'); closeModal(inp ? inp.value : null); }
-      else closeModal(true);
-    } else closeModal(modalMode === 'prompt' ? null : false);
+    if (v === 'ok'){ closeModal(true); } else closeModal(false);
     return;
   }
-
   const t = e.target.closest('[data-action]');
   if (!t) return;
   const action = t.dataset.action;
@@ -1084,6 +1058,11 @@ async function handleClick(e){
       if (state.view === 'edit'){ openEditor('current'); return; }
       if (state.view === 'upload'){ state.uploadImage = null; }
       render(); return;
+    case 'toggle-timer': {
+      const exIdx = +t.dataset.ex;
+      if (activeTimer.exIdx === exIdx) { stopTimer(exIdx); } else { startTimer(exIdx); }
+      return;
+    }
     case 'start-workout': startWorkout(t.dataset.day); return;
     case 'resume-workout': state.view = 'workout'; render(); return;
     case 'discard-workout': discardWorkout(); return;
@@ -1093,14 +1072,9 @@ async function handleClick(e){
     case 'delete-workout': deleteWorkout(t.dataset.id); return;
     case 'open-exercise-history': state.view = 'exercise-history'; state.params = { name: t.dataset.name }; render(); return;
     case 'clear-history-filter': state.params.historyFilter = { q:'', from:'', to:'' }; render(); return;
-
-    case 'add-day': {
-      state.editDraft.days.push({ id: uid(), name: 'Новый день', focus: '', color: 'blue', exercises: [] });
-      render(); return;
-    }
+    case 'add-day': state.editDraft.days.push({ id: uid(), name: 'Новый день', focus: '', color: 'blue', exercises: [] }); render(); return;
     case 'remove-day': {
-      const di = +t.dataset.day;
-      const day = state.editDraft.days[di];
+      const di = +t.dataset.day; const day = state.editDraft.days[di];
       const ok = await confirmDialog('Удалить день?', 'День «' + day.name + '» и все его упражнения будут удалены из черновика.', 'Удалить', true);
       if (!ok) return;
       state.editDraft.days.splice(di, 1); render(); return;
@@ -1111,41 +1085,29 @@ async function handleClick(e){
       render(); return;
     }
     case 'remove-ex': {
-      const di = +t.dataset.day, ei = +t.dataset.ex;
-      const ex = state.editDraft.days[di].exercises[ei];
+      const di = +t.dataset.day, ei = +t.dataset.ex; const ex = state.editDraft.days[di].exercises[ei];
       const ok = await confirmDialog('Удалить упражнение?', '«' + ex.name + '» будет удалено из черновика программы.', 'Удалить', true);
       if (!ok) return;
       state.editDraft.days[di].exercises.splice(ei, 1); render(); return;
     }
     case 'ex-up': {
-      const di = +t.dataset.day, ei = +t.dataset.ex;
-      if (ei === 0) return;
-      const arr = state.editDraft.days[di].exercises;
-      [arr[ei-1], arr[ei]] = [arr[ei], arr[ei-1]]; render(); return;
+      const di = +t.dataset.day, ei = +t.dataset.ex; if (ei === 0) return;
+      const arr = state.editDraft.days[di].exercises; [arr[ei-1], arr[ei]] = [arr[ei], arr[ei-1]]; render(); return;
     }
     case 'ex-down': {
-      const di = +t.dataset.day, ei = +t.dataset.ex;
-      const arr = state.editDraft.days[di].exercises;
+      const di = +t.dataset.day, ei = +t.dataset.ex; const arr = state.editDraft.days[di].exercises;
       if (ei >= arr.length - 1) return;
       [arr[ei+1], arr[ei]] = [arr[ei], arr[ei+1]]; render(); return;
     }
     case 'save-program': saveProgram(); return;
     case 'cancel-edit': cancelEdit(); return;
-
-    case 'start-new-program': {
-      openEditor('new');
-      return;
-    }
+    case 'start-new-program': openEditor('new'); return;
     case 'clear-upload-image': state.uploadImage = null; render(); return;
-
     case 'export': exportBackup(); return;
     case 'reset-all': resetAll(); return;
-
     case 'edit-history': {
-      const w = state.data.history.find(x => x.id === t.dataset.id);
-      if (!w) return;
-      state.historyDraft = deepClone(w);
-      state.view = 'history-edit'; state.params = { id: w.id }; render(); return;
+      const w = state.data.history.find(x => x.id === t.dataset.id); if (!w) return;
+      state.historyDraft = deepClone(w); state.view = 'history-edit'; state.params = { id: w.id }; render(); return;
     }
     case 'cancel-edit-history': state.historyDraft = null; state.view = 'history-detail'; render(); return;
     case 'save-edit-history': saveHistoryEdit(); return;
@@ -1156,11 +1118,8 @@ function saveHistoryEdit(){
   const d = state.historyDraft; if (!d) return;
   const idx = state.data.history.findIndex(x => x.id === d.id);
   if (idx === -1){ showToast('Запись не найдена', 'error'); return; }
-  state.data.history[idx] = d;
-  saveData();
-  state.historyDraft = null;
-  state.view = 'history-detail'; state.params = { id: d.id }; render();
-  showToast('Запись обновлена', 'success');
+  state.data.history[idx] = d; saveData();
+  state.historyDraft = null; state.view = 'history-detail'; state.params = { id: d.id }; render(); showToast('Запись обновлена', 'success');
 }
 
 function handleInput(e){
@@ -1168,45 +1127,29 @@ function handleInput(e){
   const f = t.getAttribute && t.getAttribute('data-field');
   if (!f) return;
 
-  /* Тренировка */
   if (f === 'weight' && t.dataset.ex != null){
     const w = state.data.activeWorkout; if (!w) return;
     const ex = w.exercises[+t.dataset.ex];
-    if (t.dataset.set != null){
-      ex.sets[+t.dataset.set].weight = t.value;
-    } else {
-      ex.weight = t.value;
-      if (!ex.perSetWeight) ex.sets.forEach(s => { s.weight = t.value; });
-    }
+    if (t.dataset.set != null){ ex.sets[+t.dataset.set].weight = t.value; } else { ex.weight = t.value; if (!ex.perSetWeight) ex.sets.forEach(s => { s.weight = t.value; }); }
     saveDebounced(); return;
   }
   if (f === 'reps' && t.dataset.ex != null){
     const w = state.data.activeWorkout; if (!w) return;
-    w.exercises[+t.dataset.ex].sets[+t.dataset.set].reps = t.value;
-    saveDebounced(); return;
+    w.exercises[+t.dataset.ex].sets[+t.dataset.set].reps = t.value; saveDebounced(); return;
   }
   if (f === 'comment' && t.dataset.ex != null){
     const w = state.data.activeWorkout; if (!w) return;
-    w.exercises[+t.dataset.ex].comment = t.value;
-    saveDebounced(); return;
+    w.exercises[+t.dataset.ex].comment = t.value; saveDebounced(); return;
   }
-
-  /* Редактор */
   if (f === 'program-name' || f === 'program-subtitle' || f.startsWith('day-') || f.startsWith('ex-')){
     if (state.editDraft){ commitEditDraftFromInput(t); return; }
   }
-
-  /* Фильтр истории */
   if (f === 'history-q' || f === 'history-from' || f === 'history-to'){
     state.params.historyFilter = state.params.historyFilter || { q:'', from:'', to:'' };
-    state.params.historyFilter[f.replace('history-', '')] = t.value;
-    renderPreserveFocus(); return;
+    state.params.historyFilter[f.replace('history-', '')] = t.value; renderPreserveFocus(); return;
   }
-
-  /* Редактирование истории */
   if (state.historyDraft){
-    const di = t.dataset.ex != null ? +t.dataset.ex : null;
-    if (di == null) return;
+    const di = t.dataset.ex != null ? +t.dataset.ex : null; if (di == null) return;
     const ex = state.historyDraft.exercises[di];
     if (f === 'he-weight') ex.sets[+t.dataset.set].weight = t.value;
     else if (f === 'he-reps') ex.sets[+t.dataset.set].reps = t.value;
@@ -1219,48 +1162,41 @@ function handleChange(e){
   const action = t.getAttribute && t.getAttribute('data-action');
   if (!action) {
     if (t.id === 'importFile'){ const f = t.files[0]; if (f) handleImportFile(f); }
-    else if (t.id === 'programImage'){
-      const f = t.files[0];
-      if (f){
-        const r = new FileReader();
-        r.onload = () => { state.uploadImage = r.result; render(); };
-        r.readAsDataURL(f);
-      }
-    }
+    else if (t.id === 'programImage'){ const f = t.files[0]; if (f){ const r = new FileReader(); r.onload = () => { state.uploadImage = r.result; render(); }; r.readAsDataURL(f); } }
     return;
   }
   if (action === 'toggle-no-weight'){
     const w = state.data.activeWorkout; if (!w) return;
-    const ex = w.exercises[+t.dataset.ex];
-    ex.noWeight = t.checked;
-    if (t.checked) ex.perSetWeight = false;
-    saveData(); render(); return;
+    const ex = w.exercises[+t.dataset.ex]; ex.noWeight = t.checked;
+    if (t.checked) ex.perSetWeight = false; saveData(); render(); return;
   }
   if (action === 'toggle-per-set-weight'){
     const w = state.data.activeWorkout; if (!w) return;
-    const ex = w.exercises[+t.dataset.ex];
-    ex.perSetWeight = t.checked;
-    if (t.checked){
-      const v = ex.weight || ex.sets[0]?.weight || '';
-      ex.sets.forEach(s => { if (!s.weight) s.weight = v; });
-    }
+    const ex = w.exercises[+t.dataset.ex]; ex.perSetWeight = t.checked;
+    if (t.checked){ const v = ex.weight || ex.sets[0]?.weight || ''; ex.sets.forEach(s => { if (!s.weight) s.weight = v; }); }
     saveData(); render(); return;
   }
 }
 
-/* ==================== СТАРТ ==================== */
+function renderPreserveFocus(){
+  const active = document.activeElement;
+  const field = active && active.getAttribute && active.getAttribute('data-field');
+  const s = active && active.selectionStart, e = active && active.selectionEnd;
+  render();
+  if (field){
+    const el = document.querySelector(`[data-field="${field}"]`);
+    if (el){ el.focus(); if (s != null && el.setSelectionRange){ try{ el.setSelectionRange(s, e); }catch(_){} } }
+  }
+}
+
 function init(){
   initData();
   document.addEventListener('click', handleClick);
   document.addEventListener('input', handleInput);
   document.addEventListener('change', handleChange);
   render();
-
   if ('serviceWorker' in navigator && location.protocol.startsWith('http')){
-    window.addEventListener('load', () => {
-      navigator.serviceWorker.register('sw.js').catch(() => {});
-    });
+    window.addEventListener('load', () => { navigator.serviceWorker.register('sw.js').catch(() => {}); });
   }
 }
-
 init();
