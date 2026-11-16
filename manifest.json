@@ -5,10 +5,14 @@
   "scope": "./",
   "display": "standalone",
   "orientation": "portrait",
-  "background_color": "#f4f7fa",
+  "background_color": "#F4F6F8",
   "theme_color": "#1a3a5c",
   "lang": "ru",
   "icons": [
     { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ],
+  "shortcuts": [
+    { "name": "Записать вес и талию", "short_name": "Вес", "url": "./index.html#body", "description": "Открыть дневник веса, талии и ИМТ" },
+    { "name": "История тренировок", "short_name": "История", "url": "./index.html#history", "description": "Открыть историю тренировок" }
   ]
 }

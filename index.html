@@ -214,6 +214,38 @@ main { max-width: 1200px; margin: 0 auto; padding: 24px 24px 48px; }
   .heatmap-cell { width: 8px; height: 8px; }
   .heatmap-legend { margin-top: 6px; }
 }
+
+/* ===== Тело, вес и ИМТ ===== */
+.form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px 12px; }
+.form-grid .field { margin-bottom: 0; }
+.bmi-scale-head { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; flex-wrap: wrap; margin-bottom: 6px; }
+.bmi-scale { position: relative; padding-top: 12px; }
+.bmi-bar { display: flex; height: 10px; border-radius: 999px; overflow: hidden; background: #ebedf0; }
+.bmi-bar span { display: block; height: 100%; }
+.bmi-marker { position: absolute; top: 2px; width: 3px; height: 22px; border-radius: 2px; background: #263445; box-shadow: 0 0 0 2px var(--card); transform: translateX(-50%); }
+.bmi-axis { position: relative; height: 18px; margin-top: 6px; }
+.bmi-axis span { position: absolute; top: 0; transform: translateX(-50%); font-size: 11px; color: var(--muted); }
+.profile-card { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px 20px; box-shadow: var(--shadow); }
+.profile-card summary { cursor: pointer; font-weight: 600; font-size: 15px; color: var(--text); }
+.profile-card summary::marker { color: var(--primary); }
+.profile-card[open] summary { margin-bottom: 12px; }
+.chart-stack { display: flex; flex-direction: column; gap: 12px; }
+.chart-legend { display: flex; gap: 14px; flex-wrap: wrap; margin-top: 8px; font-size: 12px; color: var(--muted); }
+.chart-legend span { display: inline-flex; align-items: center; gap: 5px; }
+.chart-legend i { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
+.chart-legend i.dash { width: 14px; height: 0; background: none; border-top: 2px dashed #b45309; border-radius: 0; }
+.measure-list { display: flex; flex-direction: column; gap: 8px; }
+.measure-item { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px 16px; display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; flex-wrap: wrap; box-shadow: var(--shadow); }
+.measure-main { flex: 1; min-width: 200px; }
+.measure-date { font-weight: 600; font-size: 14px; color: var(--text); }
+.measure-values { display: flex; gap: 4px 16px; flex-wrap: wrap; margin-top: 2px; font-size: 14px; color: var(--text); }
+.measure-values b { font-weight: 600; }
+.measure-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+.delta { font-size: 12px; font-weight: 600; padding: 0 5px; border-radius: 4px; white-space: nowrap; }
+.delta-down { color: var(--success); background: var(--success-light); }
+.delta-up { color: var(--warn); background: var(--warn-light); }
+.rec-card { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px 20px; box-shadow: var(--shadow); margin-bottom: 12px; }
+.rec-card h3 { margin: 0 0 8px; font-size: 15px; color: var(--text); }
 </style>
 </head>
 <body>
@@ -225,6 +257,7 @@ main { max-width: 1200px; margin: 0 auto; padding: 24px 24px 48px; }
     </div>
     <nav class="topnav" id="topnav">
       <button class="nav-btn" data-action="nav" data-view="home">Главная</button>
+      <button class="nav-btn" data-action="nav" data-view="body">Тело и ИМТ</button>
       <button class="nav-btn" data-action="nav" data-view="edit">Редактировать программу</button>
       <button class="nav-btn" data-action="nav" data-view="upload">Загрузить новую программу</button>
       <button class="nav-btn" data-action="nav" data-view="history">История тренировок</button>
