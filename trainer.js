@@ -368,7 +368,7 @@ function renderAISettingsCard(){
       <h3 style="margin:0">AI-тренер</h3>
       <span class="status-badge ${configured ? 'status-done' : 'status-not-started'}">${configured ? 'подключён' : 'не подключён'}</span>
     </div>
-    <p class="muted small" style="margin:0 0 10px">Анализ фото тела, блюд и умных весов работает через ваш API-ключ. Приложение статическое, поэтому запросы идут из браузера напрямую к провайдеру. Ключ хранится только в localStorage этого браузера — не используйте общий компьютер.</p>
+    <p class="muted small" style="margin:0 0 10px">Анализ фото тела, блюд и умных весов работает через вашего провайдера. Приложение статическое, поэтому запросы идут из браузера напрямую. Ключ хранится только в localStorage этого браузера — не используйте общий компьютер.</p>
     <div class="form-grid">
       <label class="field"><span>Провайдер</span><select class="input" id="aiProvider">
         ${Object.keys(AI_PRESETS).map(id => `<option value="${id}" ${ai.provider === id ? 'selected' : ''}>${AI_PRESETS[id].label}</option>`).join('')}
@@ -377,13 +377,29 @@ function renderAISettingsCard(){
       <label class="field"><span>Модель</span><input type="text" class="input" id="aiModel" value="${escapeHtml(ai.model)}" placeholder="gpt-4o-mini"></label>
       <label class="field"><span>API-ключ</span><input type="password" class="input" id="aiKey" value="${escapeHtml(ai.apiKey)}" placeholder="sk-…" autocomplete="off"></label>
     </div>
-    <p class="muted small" style="margin:8px 0 0">Нужна модель с поддержкой изображений (например, gpt-4o-mini). Для OpenRouter указывайте модель в формате <code>openai/gpt-4o-mini</code>.</p>
+    <p class="muted small" style="margin:8px 0 0">Нужна модель с поддержкой изображений. Бесплатные варианты: Gemini Flash, Groq, бесплатные модели OpenRouter или Ollama на вашем компьютере.</p>
+    <div class="free-models-row">
+      <button class="btn btn-ghost btn-sm" data-action="find-free-models">Найти бесплатные vision-модели OpenRouter</button>
+      <select class="input" id="aiModelPick">
+        <option value="">— список появится после поиска —</option>
+      </select>
+    </div>
     <div class="section-actions">
       <button class="btn btn-primary" data-action="save-ai">Сохранить</button>
       <button class="btn btn-ghost" data-action="test-ai">Проверить подключение</button>
       ${ai.apiKey ? '<button class="btn btn-danger" data-action="clear-ai">Удалить ключ</button>' : ''}
     </div>
     ${configured ? `<p class="muted small" style="margin:8px 0 0">Ключ: ${escapeHtml(aiMaskKey(ai.apiKey))} • модель: ${escapeHtml(ai.model)}</p>` : ''}
+    <details class="free-ai-help" style="margin-top:10px">
+      <summary class="muted small" style="cursor:pointer">Бесплатные варианты: где взять ключ и что ввести</summary>
+      <ul class="rules-list" style="margin-top:8px">
+        <li><strong>Ollama — локально, без лимитов.</strong> Установите с <a href="https://ollama.com/download" target="_blank" rel="noopener">ollama.com</a>, выполните в терминале <code>ollama pull qwen3-vl:8b</code> и выберите провайдера «Ollama». Ключ не нужен — впишите любое слово, например <code>ollama</code>.</li>
+        <li><strong>Google Gemini — бесплатный тариф.</strong> Ключ в <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">AI Studio</a>. Выберите «Google Gemini», модель <code>gemini-3.8-flash</code> или актуальную Flash из AI Studio. Лимиты видны в AI Studio; на бесплатном тарифе Google может использовать запросы для улучшения продуктов.</li>
+        <li><strong>Groq — бесплатный тариф.</strong> Ключ в <a href="https://console.groq.com/keys" target="_blank" rel="noopener">консоли Groq</a>. Модель <code>qwen/qwen3.8-27b</code> понимает фото. Бесплатный план: 30 запросов/мин и 1000/день.</li>
+        <li><strong>OpenRouter — бесплатные модели.</strong> Ключ на <a href="https://openrouter.ai/keys" target="_blank" rel="noopener">openrouter.ai/keys</a>. Нажмите «Найти бесплатные vision-модели» — список загрузится из OpenRouter. Лимит бесплатных моделей: 20 запросов/мин и 50/день, после пополнения на $10 — 1000/день.</li>
+      </ul>
+      <p class="muted small" style="margin:8px 0 0">У OpenAI, Cerebras и Cloudflare Workers AI браузерные запросы блокируются CORS, GitHub Models закрыт. Если провайдер пишет «Failed to fetch» — обычно это CORS или неверный ключ.</p>
+    </details>
     <p class="muted small" style="margin:8px 0 0">AI здесь — помощник: он не ставит диагнозов и не заменяет врача. Оценки по фото всегда приблизительные.</p>
   </div>`;
 }

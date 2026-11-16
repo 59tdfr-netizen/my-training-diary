@@ -8,8 +8,11 @@
    ============================================================ */
 
 const AI_PRESETS = {
-  openai: { label: 'OpenAI', baseUrl: 'https://api.openai.com/v1', model: 'gpt-4o-mini' },
-  openrouter: { label: 'OpenRouter', baseUrl: 'https://openrouter.ai/api/v1', model: 'openai/gpt-4o-mini' },
+  google: { label: 'Google Gemini — бесплатный тариф', baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai/', model: 'gemini-3.8-flash' },
+  groq: { label: 'Groq — бесплатный тариф', baseUrl: 'https://api.groq.com/openai/v1', model: 'qwen/qwen3.8-27b' },
+  openrouter: { label: 'OpenRouter — есть бесплатные модели', baseUrl: 'https://openrouter.ai/api/v1', model: '' },
+  ollama: { label: 'Ollama — локально, без лимитов', baseUrl: 'http://localhost:11434/v1', model: 'qwen3-vl:8b' },
+  openai: { label: 'OpenAI (платно)', baseUrl: 'https://api.openai.com/v1', model: 'gpt-4o-mini' },
   custom: { label: 'Другой OpenAI-совместимый', baseUrl: '', model: '' }
 };
 
@@ -177,4 +180,28 @@ function blobToDataURL(blob){
     reader.onerror = () => reject(reader.error || new Error('Не удалось прочитать файл'));
     reader.readAsDataURL(blob);
   });
+}
+
+/* ---------- Бесплатные vision-модели OpenRouter ---------- */
+
+function filterFreeVisionModels(models){
+  return (Array.isArray(models) ? models : [])
+    .filter(m => m && typeof m.id === 'string' && m.id.endsWith(':free'))
+    .filter(m => {
+      const arch = m.architecture || {};
+      const inputs = Array.isArray(arch.input_modalities)
+        ? arch.input_modalities
+        : (Array.isArray(m.input_modalities) ? m.input_modalities : []);
+      if (inputs.length) return inputs.includes('image');
+      return typeof arch.modality === 'string' && arch.modality.includes('image');
+    })
+    .map(m => ({ id: m.id, name: m.name || m.id }))
+    .sort((a, b) => a.id.localeCompare(b.id));
+}
+
+async function fetchOpenRouterFreeVisionModels(){
+  const res = await fetch('https://openrouter.ai/api/v1/models', { headers: { 'Accept': 'application/json' } });
+  if (!res.ok) throw new Error('OpenRouter вернул HTTP ' + res.status);
+  const data = await res.json();
+  return filterFreeVisionModels(data && data.data);
 }

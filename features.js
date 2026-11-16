@@ -47,6 +47,32 @@ async function doClearAI(){
   showToast('Ключ удалён', 'success');
 }
 
+async function findFreeModels(){
+  showToast('Ищу бесплатные vision-модели OpenRouter…');
+  try {
+    const list = await fetchOpenRouterFreeVisionModels();
+    if (!list.length){
+      showToast('Бесплатных vision-моделей не нашлось — проверьте openrouter.ai/models', 'error');
+      return;
+    }
+    const select = document.getElementById('aiModelPick');
+    if (select){
+      select.innerHTML = '<option value="">— выберите модель —</option>' + list.map(m =>
+        `<option value="${escapeHtml(m.id)}">${escapeHtml(m.id)}</option>`
+      ).join('');
+    }
+    const provider = document.getElementById('aiProvider');
+    if (provider) provider.value = 'openrouter';
+    const base = document.getElementById('aiBaseUrl');
+    if (base) base.value = AI_PRESETS.openrouter.baseUrl;
+    const model = document.getElementById('aiModel');
+    if (model && list.length === 1) model.value = list[0].id;
+    showToast('Найдено моделей: ' + list.length + '. Выберите модель в списке.', 'success');
+  } catch (e) {
+    showToast('Не удалось получить список: ' + e.message, 'error');
+  }
+}
+
 function saveInventoryFromDom(){
   const items = [];
   document.querySelectorAll('[data-field="inv-item"]').forEach(cb => {
@@ -283,6 +309,7 @@ function handleFeatureAction(action, t){
     case 'save-ai': doSaveAI().catch(e => showToast('Ошибка: ' + e.message, 'error')); return true;
     case 'test-ai': doTestAI().catch(e => showToast('Ошибка: ' + e.message, 'error')); return true;
     case 'clear-ai': doClearAI().catch(e => showToast('Ошибка: ' + e.message, 'error')); return true;
+    case 'find-free-models': findFreeModels(); return true;
 
     case 'nut-prev': shiftNutritionDate(-1); return true;
     case 'nut-next': shiftNutritionDate(1); return true;
@@ -352,8 +379,19 @@ async function handleFeatureChange(field, t){
     if (preset){
       const base = document.getElementById('aiBaseUrl');
       const model = document.getElementById('aiModel');
-      if (base && preset.baseUrl) base.value = preset.baseUrl;
-      if (model && preset.model) model.value = preset.model;
+      if (base) base.value = preset.baseUrl || '';
+      if (model) model.value = preset.model || '';
+      if (t.value === 'ollama'){
+        const key = document.getElementById('aiKey');
+        if (key && !key.value) key.value = 'ollama';
+      }
+    }
+    return true;
+  }
+  if (t && t.id === 'aiModelPick'){
+    if (t.value){
+      const model = document.getElementById('aiModel');
+      if (model) model.value = t.value;
     }
     return true;
   }
