@@ -268,8 +268,8 @@ function render(){
     Promise.resolve(hydratePhotoImages(app)).catch(() => {});
   }
   $('#brandSub').textContent = state.data.program.name + ' • ' + (state.data.program.subtitle || '');
-  const navMap = { home:'home', trainer:'trainer', nutrition:'nutrition', body:'body', workout:'home', edit:'edit', upload:'upload', history:'history', 'history-detail':'history', 'history-edit':'history', 'exercise-history':'history', backup:'backup' };
-  $$('#topnav .nav-btn').forEach(b => b.classList.toggle('active', b.dataset.view === navMap[state.view]));
+  const navMap = { home:'home', trainer:'trainer', nutrition:'nutrition', body:'body', workout:'home', edit:'more', upload:'more', history:'history', 'history-detail':'history', 'history-edit':'history', 'exercise-history':'history', backup:'more' };
+  $$('.nav-btn[data-view]').forEach(b => b.classList.toggle('active', b.dataset.view === navMap[state.view]));
   
   if (activeTimer.exIdx !== null && state.view !== 'workout') stopTimer(activeTimer.exIdx);
   if (activeTimer.exIdx !== null && state.view === 'workout') {
@@ -346,7 +346,8 @@ function renderHeatmap() {
     let title = fmtDate(d);
     if (c > 0) title += ` (тренировок: ${c})`;
 
-    cellsHtml += `<div class="heatmap-cell" data-level="${isFuture ? 0 : level}" title="${title}"></div>`;
+    const isToday = key === toDateKey(today);
+    cellsHtml += `<div class="heatmap-cell${isToday ? ' is-today' : ''}" data-level="${isFuture ? 0 : level}" title="${title}"></div>`;
     d.setDate(d.getDate() + 1);
   }
 
@@ -368,75 +369,304 @@ function renderHeatmap() {
   </div>`;
 }
 
+const MONTHS_RU = ['января', 'февраля', 'марта', 'апреля', 'мая', 'июня', 'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря'];
+const WEEKDAYS_RU = ['воскресенье', 'понедельник', 'вторник', 'среда', 'четверг', 'пятница', 'суббота'];
+const WEEKDAYS_SHORT = ['Вс', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб'];
+
+function greetingByHour(){
+  const h = new Date().getHours();
+  if (h < 5) return 'Доброй ночи';
+  if (h < 12) return 'Доброе утро';
+  if (h < 18) return 'Добрый день';
+  return 'Добрый вечер';
+}
+function fmtDateLong(d){
+  return d.getDate() + ' ' + MONTHS_RU[d.getMonth()] + ', ' + WEEKDAYS_RU[d.getDay()];
+}
+function nextPlannedDay(){
+  const days = state.data.program.days || [];
+  if (!days.length) return null;
+  return days.find(day => getDayStatus(day.id) !== 'done') || days[0];
+}
+
+let svgSeq = 0;
+/* Мужская иллюстрация: широкие плечи, узкая талия, гантели. */
+function maleAthleteSvg(extraClass){
+  const id = 'mg' + (++svgSeq);
+  return `<svg class="hero-figure ${extraClass || ''}" viewBox="0 0 320 380" role="img" aria-label="Мужчина с гантелями">
+    <defs>
+      <linearGradient id="${id}a" x1="0" y1="0" x2="1" y2="1">
+        <stop offset="0" stop-color="#8B5CF6"/>
+        <stop offset=".55" stop-color="#A855F7"/>
+        <stop offset="1" stop-color="#EC4899"/>
+      </linearGradient>
+      <linearGradient id="${id}b" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stop-color="#6D4AFF"/>
+        <stop offset="1" stop-color="#3B2A7A"/>
+      </linearGradient>
+    </defs>
+    <circle cx="162" cy="162" r="130" fill="url(#${id}a)" opacity=".11"/>
+    <circle cx="262" cy="92" r="9" fill="#F472B6" opacity=".55"/>
+    <circle cx="62" cy="248" r="6" fill="#A855F7" opacity=".45"/>
+    <circle cx="248" cy="288" r="12" fill="#C4B5FD" opacity=".5"/>
+    <path d="M56 128c-10 30-4 62 12 84" stroke="#C4B5FD" stroke-width="3" stroke-dasharray="5 9" stroke-linecap="round" fill="none"/>
+    <path d="M272 152c8 24 6 44-4 62" stroke="#DDD6FE" stroke-width="3" stroke-dasharray="5 9" stroke-linecap="round" fill="none"/>
+    <path d="M146 236 134 300 126 344" stroke="url(#${id}b)" stroke-width="24" stroke-linecap="round" fill="none"/>
+    <path d="M180 236 196 300 206 344" stroke="url(#${id}b)" stroke-width="24" stroke-linecap="round" fill="none"/>
+    <path d="M108 346h34M196 346h34" stroke="#2B1F5C" stroke-width="14" stroke-linecap="round"/>
+    <path d="M112 112C128 100 198 100 214 112L188 196C180 201 146 201 138 196Z" fill="url(#${id}a)"/>
+    <path d="M146 128c10 6 22 6 32 0" stroke="#FFFFFF" stroke-width="3" stroke-linecap="round" opacity=".35" fill="none"/>
+    <path d="M138 194C152 201 174 201 188 194L194 240C178 247 148 247 132 240Z" fill="#3B2A7A"/>
+    <path d="M158 198v40" stroke="#2B1F5C" stroke-width="3" opacity=".5"/>
+    <rect x="152" y="86" width="20" height="20" rx="9" fill="#6D4AFF"/>
+    <circle cx="162" cy="64" r="27" fill="url(#${id}a)"/>
+    <path d="M136 58c3-17 49-19 52 0-10-7-42-9-52 0z" fill="#3B2A7A"/>
+    <path d="M120 122 96 166 90 202" stroke="url(#${id}a)" stroke-width="18" stroke-linecap="round" fill="none"/>
+    <path d="M206 122 234 154 232 122" stroke="url(#${id}a)" stroke-width="18" stroke-linecap="round" fill="none"/>
+    <circle cx="90" cy="205" r="9" fill="#6D4AFF"/>
+    <circle cx="232" cy="120" r="9" fill="#6D4AFF"/>
+    <g transform="translate(90 218) rotate(6)">
+      <rect x="-24" y="-3" width="48" height="6" rx="3" fill="#3B2A7A"/>
+      <rect x="-33" y="-11" width="10" height="22" rx="4" fill="url(#${id}a)"/>
+      <rect x="23" y="-11" width="10" height="22" rx="4" fill="url(#${id}a)"/>
+    </g>
+    <g transform="translate(234 111) rotate(-24)">
+      <rect x="-24" y="-3" width="48" height="6" rx="3" fill="#3B2A7A"/>
+      <rect x="-33" y="-11" width="10" height="22" rx="4" fill="url(#${id}a)"/>
+      <rect x="23" y="-11" width="10" height="22" rx="4" fill="url(#${id}a)"/>
+    </g>
+  </svg>`;
+}
+
+function ringSvg(value, max, color, size, strokeWidth, color2){
+  const r = (size - strokeWidth) / 2;
+  const c = 2 * Math.PI * r;
+  const pct = max > 0 ? Math.max(0, Math.min(1, value / max)) : 0;
+  const gid = 'rg' + (++svgSeq);
+  return `<svg class="ring-svg" viewBox="0 0 ${size} ${size}" aria-hidden="true">
+    <defs><linearGradient id="${gid}" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="${color}"/><stop offset="1" stop-color="${color2 || color}"/>
+    </linearGradient></defs>
+    <circle cx="${size / 2}" cy="${size / 2}" r="${r}" fill="none" stroke="#EEEAF9" stroke-width="${strokeWidth}"/>
+    <circle cx="${size / 2}" cy="${size / 2}" r="${r}" fill="none" stroke="url(#${gid})" stroke-width="${strokeWidth}" stroke-linecap="round" stroke-dasharray="${c.toFixed(2)}" stroke-dashoffset="${(c * (1 - pct)).toFixed(2)}" transform="rotate(-90 ${size / 2} ${size / 2})"/>
+  </svg>`;
+}
+
+function ringCard(opts){
+  const size = opts.size || 88;
+  const stroke = opts.stroke || Math.max(7, Math.round(size / 10));
+  const max = Number(opts.max) || 0;
+  const value = Number(opts.value) || 0;
+  const sub = opts.sub != null ? opts.sub : (max ? 'из ' + f0(max) : 'цель не задана');
+  return `<div class="ring-card">
+    <div class="ring-wrap" style="width:${size}px;height:${size}px">
+      ${ringSvg(value, max, opts.color || '#7C5CFF', size, stroke, opts.color2)}
+      <div class="ring-center"><strong>${escapeHtml(opts.display != null ? String(opts.display) : f0(value))}</strong>${opts.unit ? `<span>${escapeHtml(opts.unit)}</span>` : ''}</div>
+    </div>
+    <div class="ring-info">
+      <div class="ring-title">${escapeHtml(opts.title || '')}</div>
+      <div class="muted small">${escapeHtml(sub)}</div>
+    </div>
+  </div>`;
+}
+
+function sparklineSvg(points, color){
+  if (!points || points.length < 2) return '';
+  const w = 140, h = 44, p = 4;
+  const vals = points.map(pt => pt.value);
+  let min = Math.min.apply(null, vals), max = Math.max.apply(null, vals);
+  if (max - min < 0.5){ max += 0.5; min -= 0.5; }
+  const X = i => p + (i / (points.length - 1)) * (w - 2 * p);
+  const Y = v => h - p - ((v - min) / (max - min)) * (h - 2 * p);
+  const d = points.map((pt, i) => (i ? 'L' : 'M') + X(i).toFixed(1) + ',' + Y(pt.value).toFixed(1)).join(' ');
+  const last = points.length - 1;
+  return `<svg class="spark" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" aria-hidden="true">
+    <path d="${d}" fill="none" stroke="${color || '#7C5CFF'}" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+    <circle cx="${X(last).toFixed(1)}" cy="${Y(points[last].value).toFixed(1)}" r="3" fill="${color || '#7C5CFF'}"/>
+  </svg>`;
+}
+
+function renderHero(stats, totals, targets){
+  const active = state.data.activeWorkout;
+  const kcalPill = targets.kcal
+    ? f0(totals.kcal) + ' из ' + f0(targets.kcal) + ' ккал'
+    : 'Калории: добавьте вес';
+  return `<section class="hero">
+    <div class="hero-copy">
+      <div class="hero-eyebrow">${escapeHtml(fmtDateLong(new Date()))}</div>
+      <h2>${greetingByHour()},<br><span class="grad-text">держим форму</span></h2>
+      <p>${escapeHtml(state.data.program.subtitle || 'План, питание и прогресс — в одном лёгком дневнике.')}</p>
+      <div class="hero-actions">
+        <button class="btn btn-primary" data-action="quick-start">${active ? 'Продолжить тренировку' : 'Начать тренировку'}</button>
+        <button class="btn btn-soft" data-action="open-quick">Добавить запись</button>
+      </div>
+      <div class="hero-pills">
+        <span class="pill">${stats.weekDone} из ${stats.weekPlanned} ${pluralRu(stats.weekPlanned, 'тренировки', 'тренировок', 'тренировок')}</span>
+        <span class="pill">${stats.percent}% плана за 4 недели</span>
+        <span class="pill">${kcalPill}</span>
+      </div>
+    </div>
+    <div class="hero-art">${maleAthleteSvg()}</div>
+  </section>`;
+}
+
+function renderNextWorkoutCard(day, active){
+  if (active){
+    return `<article class="dash-card next-workout">
+      <div class="card-top"><span class="eyebrow">Сейчас в работе</span><span class="status-badge status-in-progress">В процессе</span></div>
+      <h3>${escapeHtml(active.dayName)}</h3>
+      <p class="muted" style="margin:0 0 4px">Начата ${fmtDateTime(active.startedAt)}</p>
+      <div class="chip-row">${active.exercises.slice(0, 3).map(e => `<span class="chip">${escapeHtml(e.name)}</span>`).join('')}</div>
+      <div class="card-actions"><button class="btn btn-primary btn-block" data-action="resume-workout">Продолжить</button></div>
+    </article>`;
+  }
+  if (!day) return '';
+  const totalSets = day.exercises.reduce((sum, e) => sum + (Number(e.sets) || 0), 0);
+  const doneThisWeek = state.data.program.days.filter(d => getDayStatus(d.id) === 'done').length;
+  const allDone = doneThisWeek >= state.data.program.days.length;
+  const chips = day.exercises.slice(0, 3).map(e => `<span class="chip">${escapeHtml(e.name)}</span>`).join('') +
+    (day.exercises.length > 3 ? `<span class="chip chip-more">+${day.exercises.length - 3}</span>` : '');
+  return `<article class="dash-card next-workout">
+    <div class="card-top"><span class="eyebrow">${allDone ? 'Неделя закрыта' : 'Следующая тренировка'}</span><span class="badge badge-soft">${day.exercises.length} ${pluralRu(day.exercises.length, 'упражнение', 'упражнения', 'упражнений')}</span></div>
+    <h3>${escapeHtml(day.name)}</h3>
+    <p class="muted" style="margin:0 0 4px">${escapeHtml(day.focus || '')}${totalSets ? ' · ' + totalSets + ' ' + pluralRu(totalSets, 'подход', 'подхода', 'подходов') : ''}</p>
+    <div class="chip-row">${chips}</div>
+    <div class="card-actions"><button class="btn btn-primary btn-block" data-action="start-workout" data-day="${day.id}">${allDone ? 'Повторить тренировку' : 'Начать'}</button></div>
+  </article>`;
+}
+
+function renderWeekActivityCard(){
+  const today = new Date();
+  const days = [];
+  let totalSets = 0, totalWorkouts = 0;
+  for (let i = 6; i >= 0; i--){
+    const d = addDays(today, -i);
+    const key = toDateKey(d);
+    let sets = 0, workouts = 0;
+    state.data.history.forEach(w => {
+      if (toDateKey(new Date(w.date)) !== key) return;
+      workouts += 1;
+      (w.exercises || []).forEach(e => { sets += (e.sets || []).length; });
+    });
+    totalSets += sets; totalWorkouts += workouts;
+    days.push({ label: WEEKDAYS_SHORT[d.getDay()], sets, workouts, isToday: i === 0 });
+  }
+  const maxSets = Math.max(1, ...days.map(d => d.sets));
+  const bars = days.map(d => {
+    const height = d.sets ? Math.max(10, Math.round(d.sets / maxSets * 96)) : 4;
+    return `<div class="bar-col ${d.isToday ? 'is-today' : ''}">
+      <span class="bar-value">${d.sets || ''}</span>
+      <div class="bar-fill" style="height:${height}px"></div>
+      <span class="bar-label">${d.label}</span>
+    </div>`;
+  }).join('');
+  return `<article class="dash-card">
+    <div class="card-top"><span class="eyebrow">Активность за неделю</span><span class="muted small">${totalSets} ${pluralRu(totalSets, 'подход', 'подхода', 'подходов')}</span></div>
+    <h3>${totalWorkouts ? totalWorkouts + ' ' + pluralRu(totalWorkouts, 'тренировка', 'тренировки', 'тренировок') : 'Пока тихо'}</h3>
+    <div class="activity-bars">${bars}</div>
+    <div class="card-foot muted small">${totalSets ? 'Столбики — выполненные подходы по дням.' : 'Начните тренировку — активность появится здесь.'}</div>
+  </article>`;
+}
+
 function renderHome(){
   const prog = state.data.program;
   const stats = computeStats();
   const active = state.data.activeWorkout;
-  let html = '';
+  const targets = nutritionTargets();
+  const totals = dayTotals(toDateKey(new Date()));
+  const nextDay = active ? null : nextPlannedDay();
+
+  let html = renderHero(stats, totals, targets);
 
   if (active){
     html += `<div class="banner banner-info">
       <div><strong>Незавершённая тренировка</strong><div class="muted small">${escapeHtml(active.dayName)} • начата ${fmtDateTime(active.startedAt)}</div></div>
       <div class="banner-actions">
-        <button class="btn btn-primary" data-action="resume-workout">Продолжить</button>
-        <button class="btn btn-ghost" data-action="discard-workout">Отменить</button>
+        <button class="btn btn-primary btn-sm" data-action="resume-workout">Продолжить</button>
+        <button class="btn btn-ghost btn-sm" data-action="discard-workout">Отменить</button>
       </div></div>`;
   }
 
   const lastBackup = new Date(state.data.meta.lastBackupAt || 0);
   const daysSinceBackup = Math.floor((new Date() - lastBackup) / (1000 * 60 * 60 * 24));
-  if (daysSinceBackup > 14) {
+  if (daysSinceBackup > 14){
     html += `<div class="banner banner-warn">
       <div><strong>Давно не сохраняли данные</strong><div class="muted small">Прошло ${daysSinceBackup} дней. Браузер может очистить память.</div></div>
-      <div class="banner-actions">
-        <button class="btn btn-primary" data-action="nav" data-view="backup">Сделать бэкап</button>
-      </div></div>`;
+      <div class="banner-actions"><button class="btn btn-primary btn-sm" data-action="nav" data-view="backup">Сделать бэкап</button></div></div>`;
   }
 
   html += `<section class="section">
-    <h2 class="section-title">Сводка прогресса</h2>
-    <div class="stats">
-      <div class="stat"><div class="stat-value">${stats.weekDone} <span class="stat-sub">из ${stats.weekPlanned}</span></div><div class="stat-label">Тренировок на этой неделе</div></div>
-      <div class="stat"><div class="stat-value">${stats.percent}%</div><div class="stat-label">Выполнение за 4 недели</div></div>
-      <div class="stat"><div class="stat-value">${stats.lastDate ? fmtDate(stats.lastDate) : '—'}</div><div class="stat-label">Последняя тренировка</div></div>
-      <div class="stat"><div class="stat-value">${stats.totalDone}</div><div class="stat-label">Всего завершено</div></div>
+    <div class="section-head"><h2 class="section-title">Сегодня</h2><button class="link-btn" data-action="nav" data-view="nutrition">Дневник питания →</button></div>
+    <div class="ring-row">
+      ${ringCard({ value: totals.kcal, max: targets.kcal, color: '#7C5CFF', color2: '#EC4899', display: targets.kcal ? f0(totals.kcal) : '—', unit: 'ккал', title: 'Калории', sub: targets.kcal ? 'из ' + f0(targets.kcal) + ' ккал' : 'добавьте вес в профиль' })}
+      ${ringCard({ value: totals.protein, max: targets.protein, color: '#0FA97A', color2: '#34D399', display: targets.protein ? f0(totals.protein) : '—', unit: 'г', title: 'Белки', sub: targets.protein ? 'из ' + f0(targets.protein) + ' г' : 'цель не задана' })}
+      ${ringCard({ value: stats.weekDone, max: stats.weekPlanned, color: '#EC4899', color2: '#A855F7', display: String(stats.weekDone), unit: 'из ' + stats.weekPlanned, title: 'Тренировки', sub: 'на этой неделе' })}
     </div>
   </section>`;
 
-  html += renderTrainerHomeCard();
-  html += renderNutritionHomeCard();
-  html += renderBodyHomeCard();
+  html += `<div class="dash-grid">
+    ${renderNextWorkoutCard(nextDay, active)}
+    ${renderBodyHomeCard()}
+    ${renderWeekActivityCard()}
+    ${renderTrainerHomeCard()}
+  </div>`;
 
-  if (state.data.history.length > 0) {
-    html += `<section class="section">
-      <h2 class="section-title">Календарь активности</h2>
-      ${renderHeatmap()}
-    </section>`;
-  }
+  html += `<section class="section">
+    <div class="section-head"><h2 class="section-title">План тренировок</h2><button class="link-btn" data-action="nav" data-view="edit">Изменить программу</button></div>
+    <div class="day-grid">${prog.days.map(renderDayCard).join('')}</div>
+  </section>`;
 
-  if (prog.rules && prog.rules.length){
-    html += `<section class="section"><h2 class="section-title">Общие правила</h2><div class="rules-card"><ul class="rules-list">${prog.rules.map(r => `<li>${escapeHtml(r)}</li>`).join('')}</ul></div></section>`;
-  }
-
-  html += `<section class="section"><h2 class="section-title">План тренировок</h2><div class="day-grid">`;
-  prog.days.forEach(day => { html += renderDayCard(day); });
-  html += `</div></section>`;
-
-  if (prog.extra && prog.extra.length){
-    html += `<section class="section"><h2 class="section-title">Дополнительно</h2><div class="extra-grid">`;
-    prog.extra.forEach(it => { html += `<div class="extra-card"><div class="extra-title">${escapeHtml(it.title)}</div><div class="extra-text">${escapeHtml(it.text)}</div></div>`; });
-    html += `</div></section>`;
-  }
-
-  if (prog.goals && prog.goals.length){
-    html += `<section class="section"><h2 class="section-title">Цель на этап</h2><div class="rules-card"><ul class="goals-list">${prog.goals.map(g => `<li>${escapeHtml(g)}</li>`).join('')}</ul></div></section>`;
-  }
-  if (prog.notes && prog.notes.length){
-    html += `<section class="section"><h2 class="section-title">Важные заметки</h2><div class="rules-card"><ul class="notes-list">${prog.notes.map(n => `<li>${escapeHtml(n)}</li>`).join('')}</ul></div></section>`;
-  }
-
-  html += `<section class="section storage-note"><p class="muted small">Данные хранятся в этом браузере. Для переноса или защиты от очистки кэша используйте <a href="#" data-action="nav" data-view="backup">резервную копию</a>.</p></section>`;
+  html += renderHeatmapCard();
+  html += renderAboutProgram(prog);
+  html += `<p class="storage-note">Данные хранятся в этом браузере. <button class="link-btn" data-action="nav" data-view="backup">Сделать резервную копию</button></p>`;
   return html;
+}
+
+function renderHeatmapCard(){
+  if (!state.data.history.length) return '';
+  return `<section class="section">
+    <div class="section-head"><h2 class="section-title">Активность</h2><span class="muted small">календарь тренировок</span></div>
+    ${renderHeatmap()}
+  </section>`;
+}
+
+function renderAboutProgram(prog){
+  const block = (title, items, cls) => (items && items.length)
+    ? `<div class="about-block"><h4>${title}</h4><ul class="${cls}">${items.map(i => `<li>${escapeHtml(i)}</li>`).join('')}</ul></div>`
+    : '';
+  const extra = (prog.extra || []).length
+    ? `<div class="about-block"><h4>Дополнительно</h4><div class="extra-grid">${prog.extra.map(it => `<div class="extra-card"><div class="extra-title">${escapeHtml(it.title)}</div><div class="extra-text">${escapeHtml(it.text)}</div></div>`).join('')}</div></div>`
+    : '';
+  const content = block('Правила', prog.rules, 'rules-list') + block('Цель этапа', prog.goals, 'goals-list') + block('Заметки', prog.notes, 'notes-list') + extra;
+  if (!content) return '';
+  return `<details class="about-card">
+    <summary>О программе: правила, цели и заметки</summary>
+    <div class="about-grid">${content}</div>
+  </details>`;
+}
+
+function moreMenuHtml(){
+  return `<h3>Ещё</h3>
+    <p>Дополнительные разделы дневника.</p>
+    <div class="more-grid">
+      <button class="more-link" data-action="nav" data-view="edit"><span class="more-dot"></span><span><strong>Программа</strong><em>Дни, упражнения и инвентарь</em></span></button>
+      <button class="more-link" data-action="nav" data-view="upload"><span class="more-dot"></span><span><strong>Загрузка</strong><em>Новая программа по фото</em></span></button>
+      <button class="more-link" data-action="nav" data-view="backup"><span class="more-dot"></span><span><strong>Резервная копия</strong><em>Экспорт, импорт и сброс</em></span></button>
+    </div>
+    <div class="modal-actions"><button class="btn btn-ghost" data-modal="cancel">Закрыть</button></div>`;
+}
+
+function quickActionsHtml(){
+  const active = state.data.activeWorkout;
+  return `<h3>Быстрое действие</h3>
+    <p>Что запишем?</p>
+    <div class="quick-grid">
+      <button class="quick-action" data-action="open-body"><span class="quick-dot"></span><strong>Вес и талия</strong><em>Измерение тела</em></button>
+      <button class="quick-action" data-action="nav" data-view="nutrition"><span class="quick-dot"></span><strong>Еда</strong><em>Дневник калорий</em></button>
+      <button class="quick-action" data-action="open-photos"><span class="quick-dot"></span><strong>Фото</strong><em>Прогресс тела</em></button>
+      <button class="quick-action" data-action="quick-start"><span class="quick-dot"></span><strong>${active ? 'Продолжить' : 'Тренировка'}</strong><em>${active ? 'Вернуться к занятию' : 'Начать следующую'}</em></button>
+    </div>
+    <div class="modal-actions"><button class="btn btn-ghost" data-modal="cancel">Закрыть</button></div>`;
 }
 
 function renderDayCard(day){
@@ -444,6 +674,7 @@ function renderDayCard(day){
   const active = state.data.activeWorkout;
   const isActive = active && active.dayId === day.id;
   const lastWorkout = status === 'done' ? getLastWorkoutForDay(day.id) : null;
+  const totalSets = day.exercises.reduce((sum, e) => sum + (Number(e.sets) || 0), 0);
 
   let exHtml = '';
   day.exercises.forEach(ex => {
@@ -466,17 +697,21 @@ function renderDayCard(day){
   let actionsHtml;
   if (isActive){ actionsHtml = `<button class="btn btn-primary btn-block" data-action="resume-workout">Продолжить тренировку</button>`; }
   else if (active){ actionsHtml = `<button class="btn btn-ghost btn-block" disabled>Есть незавершённая тренировка</button>`; }
-  else if (lastWorkout){ actionsHtml = `<button class="btn btn-ghost" data-action="open-workout" data-id="${lastWorkout.id}">Открыть результат</button><button class="btn btn-primary" data-action="start-workout" data-day="${day.id}">Начать снова</button>`; }
+  else if (lastWorkout){ actionsHtml = `<button class="btn btn-ghost" data-action="open-workout" data-id="${lastWorkout.id}">Результат</button><button class="btn btn-primary" data-action="start-workout" data-day="${day.id}">Ещё раз</button>`; }
   else { actionsHtml = `<button class="btn btn-primary btn-block" data-action="start-workout" data-day="${day.id}">Начать тренировку</button>`; }
 
-  return `<div class="day-card day-card-${day.color || 'blue'}">
+  return `<article class="day-card day-card-${day.color || 'blue'}">
     <div class="day-card-header">
       <div class="day-card-heading"><div class="day-card-title">${escapeHtml(day.name)}</div><div class="day-card-focus">${escapeHtml(day.focus || '')}</div></div>
       ${statusHtml}
     </div>
-    <ul class="ex-list">${exHtml}</ul>
+    <div class="day-meta">${day.exercises.length} ${pluralRu(day.exercises.length, 'упражнение', 'упражнения', 'упражнений')} · ${totalSets} ${pluralRu(totalSets, 'подход', 'подхода', 'подходов')}</div>
+    <details class="day-details">
+      <summary>Упражнения</summary>
+      <ul class="ex-list">${exHtml}</ul>
+    </details>
     <div class="day-card-actions">${actionsHtml}</div>
-  </div>`;
+  </article>`;
 }
 
 function computeStats(){
@@ -592,7 +827,7 @@ function renderHistory(){
         <div class="history-item-main" data-action="open-workout" data-id="${w.id}">
           <div class="history-date">${fmtDate(w.date)} <span class="muted small">${pad2(new Date(w.date).getHours())}:${pad2(new Date(w.date).getMinutes())}</span></div>
           <div class="history-day">${escapeHtml(w.dayName)} — ${escapeHtml(w.focus || '')}</div>
-          <div class="muted small">${w.exercises.length} упражнений • ${totalSets} подходов</div>
+          <div class="muted small">${w.exercises.length} ${pluralRu(w.exercises.length, 'упражнение', 'упражнения', 'упражнений')} • ${totalSets} ${pluralRu(totalSets, 'подход', 'подхода', 'подходов')}</div>
         </div>
         <div class="history-item-actions">
           <button class="btn btn-ghost btn-sm" data-action="open-workout" data-id="${w.id}">Открыть</button>
@@ -725,17 +960,17 @@ function renderChart(points, title){
   const xScale = i => P + (i / (points.length - 1)) * (W - 2 * P);
   const yScale = v => H - P - ((v - minY) / yRange) * (H - 2 * P);
   const path = points.map((p, i) => `${i === 0 ? 'M' : 'L'}${xScale(i).toFixed(1)},${yScale(p.value).toFixed(1)}`).join(' ');
-  const dots = points.map((p, i) => `<circle cx="${xScale(i).toFixed(1)}" cy="${yScale(p.value).toFixed(1)}" r="3.5" fill="#2878C8"/>`).join('');
+  const dots = points.map((p, i) => `<circle cx="${xScale(i).toFixed(1)}" cy="${yScale(p.value).toFixed(1)}" r="3.5" fill="#7C5CFF"/>`).join('');
   const xLabels = points.map((p, i) => {
     const step = Math.ceil(points.length / 6);
     if (i % step !== 0 && i !== points.length - 1) return '';
-    return `<text x="${xScale(i).toFixed(1)}" y="${H - 8}" font-size="10" text-anchor="middle" fill="#687586">${fmtDate(p.date).slice(0, 5)}</text>`;
+    return `<text x="${xScale(i).toFixed(1)}" y="${H - 8}" font-size="10" text-anchor="middle" fill="#7A7492">${fmtDate(p.date).slice(0, 5)}</text>`;
   }).join('');
   return `<svg class="chart-svg" viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="${escapeHtml(title)}">
-    <line x1="${P}" y1="${H - P}" x2="${W - P}" y2="${H - P}" stroke="#E1E6EC"/>
-    <line x1="${P}" y1="${P}" x2="${P}" y2="${H - P}" stroke="#E1E6EC"/>
-    <path d="${path}" fill="none" stroke="#2878C8" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>
-    ${dots}${xLabels}<text x="${P}" y="16" font-size="12" fill="#687586">${escapeHtml(title)}</text>
+    <line x1="${P}" y1="${H - P}" x2="${W - P}" y2="${H - P}" stroke="#EAE6F5"/>
+    <line x1="${P}" y1="${P}" x2="${P}" y2="${H - P}" stroke="#EAE6F5"/>
+    <path d="${path}" fill="none" stroke="#7C5CFF" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>
+    ${dots}${xLabels}<text x="${P}" y="16" font-size="12" fill="#7A7492">${escapeHtml(title)}</text>
   </svg>`;
 }
 
@@ -751,13 +986,13 @@ const MEASURE_FIELD_MAP = {
   'm-fat': 'bodyFat', 'm-muscle': 'muscle', 'm-water': 'water', 'm-visceral': 'visceral'
 };
 const BMI_CATEGORIES = [
-  { max: 16, key: 'severe-under', label: 'Выраженный дефицит массы', color: '#c53030' },
-  { max: 18.5, key: 'under', label: 'Недостаточная масса', color: '#b45309' },
-  { max: 25, key: 'normal', label: 'Норма', color: '#27845A' },
-  { max: 30, key: 'over', label: 'Избыточная масса', color: '#b45309' },
-  { max: 35, key: 'ob1', label: 'Ожирение I степени', color: '#c53030' },
-  { max: 40, key: 'ob2', label: 'Ожирение II степени', color: '#a82222' },
-  { max: Infinity, key: 'ob3', label: 'Ожирение III степени', color: '#a82222' }
+  { max: 16, key: 'severe-under', label: 'Выраженный дефицит массы', color: '#E11D48' },
+  { max: 18.5, key: 'under', label: 'Недостаточная масса', color: '#C2740A' },
+  { max: 25, key: 'normal', label: 'Норма', color: '#0FA97A' },
+  { max: 30, key: 'over', label: 'Избыточная масса', color: '#C2740A' },
+  { max: 35, key: 'ob1', label: 'Ожирение I степени', color: '#E11D48' },
+  { max: 40, key: 'ob2', label: 'Ожирение II степени', color: '#BE123C' },
+  { max: Infinity, key: 'ob3', label: 'Ожирение III степени', color: '#9F1239' }
 ];
 
 function numOrEmpty(v){
@@ -777,8 +1012,8 @@ function pluralRu(n, one, few, many){
 function fmtSigned(v, digits){
   if (v == null || !isFinite(v)) return '';
   const d = Math.pow(10, digits);
-  const s = (Math.round(v * d) / d).toFixed(digits).replace('.', ',');
-  return (v > 0 ? '+' : '') + s;
+  const abs = (Math.round(Math.abs(v) * d) / d).toFixed(digits).replace('.', ',');
+  return (v > 0 ? '+' : (v < 0 ? '−' : '')) + abs;
 }
 function niceStep(raw){
   if (!isFinite(raw) || raw <= 0) return 1;
@@ -889,11 +1124,11 @@ function getBodySummary(){
 
 function bmiScaleHtml(bmi){
   const ranges = [
-    { from: 15, to: 18.5, color: '#f2c94c' },
-    { from: 18.5, to: 25, color: '#40c463' },
-    { from: 25, to: 30, color: '#f2994a' },
-    { from: 30, to: 35, color: '#eb5757' },
-    { from: 35, to: 40, color: '#a82222' }
+    { from: 15, to: 18.5, color: '#FCD34D' },
+    { from: 18.5, to: 25, color: '#34D399' },
+    { from: 25, to: 30, color: '#FBBF24' },
+    { from: 30, to: 35, color: '#FB7185' },
+    { from: 35, to: 40, color: '#E11D48' }
   ];
   const min = 15, max = 40;
   const pos = v => ((Math.min(max, Math.max(min, v)) - min) / (max - min)) * 100;
@@ -911,7 +1146,7 @@ function bmiScaleHtml(bmi){
 function renderBodyChart(cfg){
   const W = 640, H = 240, PL = 48, PR = 18, PT = 24, PB = 36;
   const series = (cfg.series || [])
-    .map(s => ({ label: s.label || '', color: s.color || '#2878C8', points: (s.points || []).filter(p => p && p.date && isFinite(p.value)) }))
+    .map(s => ({ label: s.label || '', color: s.color || '#7C5CFF', points: (s.points || []).filter(p => p && p.date && isFinite(p.value)) }))
     .filter(s => s.points.length);
   const all = series.reduce((acc, s) => acc.concat(s.points), []);
   if (!all.length) return '';
@@ -939,24 +1174,24 @@ function renderBodyChart(cfg){
   let bandSvg = '';
   if (cfg.band){
     const yTop = Y(cfg.band[1]), yBot = Y(cfg.band[0]);
-    bandSvg = `<rect x="${PL}" y="${yTop.toFixed(1)}" width="${(W - PL - PR).toFixed(1)}" height="${Math.max(0, yBot - yTop).toFixed(1)}" fill="#e6f4ed"/>` +
-      `<text x="${W - PR - 6}" y="${(yTop + 12).toFixed(1)}" font-size="10" text-anchor="end" fill="#27845A">норма ${f1(cfg.band[0])}–${f1(cfg.band[1])}</text>`;
+    bandSvg = `<rect x="${PL}" y="${yTop.toFixed(1)}" width="${(W - PL - PR).toFixed(1)}" height="${Math.max(0, yBot - yTop).toFixed(1)}" fill="#E9F8F2"/>` +
+      `<text x="${W - PR - 6}" y="${(yTop + 12).toFixed(1)}" font-size="10" text-anchor="end" fill="#0FA97A">норма ${f1(cfg.band[0])}–${f1(cfg.band[1])}</text>`;
   }
 
   let grid = '';
   for (let i = 0; i <= steps; i++){
     const v = minV + step * i;
     const y = Y(v);
-    grid += `<line x1="${PL}" y1="${y.toFixed(1)}" x2="${W - PR}" y2="${y.toFixed(1)}" stroke="#E1E6EC" stroke-dasharray="3 3"/>`;
-    grid += `<text x="${PL - 8}" y="${(y + 4).toFixed(1)}" font-size="10" text-anchor="end" fill="#687586">${axis(v)}</text>`;
+    grid += `<line x1="${PL}" y1="${y.toFixed(1)}" x2="${W - PR}" y2="${y.toFixed(1)}" stroke="#EAE6F5" stroke-dasharray="3 3"/>`;
+    grid += `<text x="${PL - 8}" y="${(y + 4).toFixed(1)}" font-size="10" text-anchor="end" fill="#7A7492">${axis(v)}</text>`;
   }
 
   let linesSvg = '';
   (cfg.hlines || []).forEach(l => {
     if (!isFinite(l.value)) return;
     const y = Y(l.value).toFixed(1);
-    linesSvg += `<line x1="${PL}" y1="${y}" x2="${W - PR}" y2="${y}" stroke="${l.color || '#b45309'}" stroke-width="1.5" stroke-dasharray="5 4"/>`;
-    linesSvg += `<text x="${W - PR - 4}" y="${(Y(l.value) - 5).toFixed(1)}" font-size="10" text-anchor="end" fill="${l.color || '#b45309'}">${escapeHtml(l.label || '')}</text>`;
+    linesSvg += `<line x1="${PL}" y1="${y}" x2="${W - PR}" y2="${y}" stroke="${l.color || '#C2740A'}" stroke-width="1.5" stroke-dasharray="5 4"/>`;
+    linesSvg += `<text x="${W - PR - 4}" y="${(Y(l.value) - 5).toFixed(1)}" font-size="10" text-anchor="end" fill="${l.color || '#C2740A'}">${escapeHtml(l.label || '')}</text>`;
   });
 
   let pathsSvg = '';
@@ -976,19 +1211,19 @@ function renderBodyChart(cfg){
   picks.forEach((day, i) => {
     const t = new Date(day).getTime();
     const anchor = i === 0 ? 'start' : (i === picks.length - 1 ? 'end' : 'middle');
-    xLabels += `<text x="${X(t).toFixed(1)}" y="${H - 12}" font-size="10" text-anchor="${anchor}" fill="#687586">${escapeHtml(fmtDate(new Date(t)).slice(0, 5))}</text>`;
+    xLabels += `<text x="${X(t).toFixed(1)}" y="${H - 12}" font-size="10" text-anchor="${anchor}" fill="#7A7492">${escapeHtml(fmtDate(new Date(t)).slice(0, 5))}</text>`;
   });
 
   let legend = '';
   series.forEach(s => { legend += `<span><i style="background:${s.color}"></i>${escapeHtml(s.label)}</span>`; });
   (cfg.hlines || []).forEach(l => {
-    if (isFinite(l.value)) legend += `<span><i class="dash" style="border-top-color:${l.color || '#b45309'}"></i>${escapeHtml(l.label || '')}</span>`;
+    if (isFinite(l.value)) legend += `<span><i class="dash" style="border-top-color:${l.color || '#C2740A'}"></i>${escapeHtml(l.label || '')}</span>`;
   });
-  if (cfg.band) legend += '<span><i style="background:#e6f4ed;border:1px solid #b7e0c9"></i>норма ИМТ</span>';
+  if (cfg.band) legend += '<span><i style="background:#E9F8F2;border:1px solid #B7E6D5"></i>норма ИМТ</span>';
 
   return `<div class="chart-wrap">
     <svg class="chart-svg" viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="${escapeHtml(cfg.title || 'График')}">
-      <text x="${PL}" y="15" font-size="12" fill="#687586">${escapeHtml(cfg.title || '')}</text>
+      <text x="${PL}" y="15" font-size="12" fill="#7A7492">${escapeHtml(cfg.title || '')}</text>
       ${bandSvg}${grid}${linesSvg}${pathsSvg}${xLabels}
     </svg>
     ${legend ? `<div class="chart-legend">${legend}</div>` : ''}
@@ -999,7 +1234,7 @@ function deltaBadge(delta, unit){
   if (delta == null || !isFinite(delta) || Math.abs(delta) < 0.05) return '';
   const cls = delta < 0 ? 'delta-down' : 'delta-up';
   const arrow = delta < 0 ? '▼' : '▲';
-  return `<span class="delta ${cls}">${arrow} ${fmtSigned(delta, 1).replace('+', '').replace('-', '')} ${unit}</span>`;
+  return `<span class="delta ${cls}">${arrow} ${fmtSigned(delta, 1).replace('+', '').replace('-', '').replace('−', '')} ${unit}</span>`;
 }
 
 function buildBodyAdvice(){
@@ -1263,23 +1498,23 @@ function renderBody(){
   if (weightPoints.length){
     charts.push(renderBodyChart({
       title: 'Вес, кг',
-      series: [{ label: 'Вес', color: '#2878C8', points: weightPoints }],
-      hlines: targetWeight ? [{ value: targetWeight, label: 'цель ' + f1(targetWeight) + ' кг', color: '#b45309' }] : []
+      series: [{ label: 'Вес', color: '#7C5CFF', points: weightPoints }],
+      hlines: targetWeight ? [{ value: targetWeight, label: 'цель ' + f1(targetWeight) + ' кг', color: '#C2740A' }] : []
     }));
   }
   if (waistPoints.length){
     const hlines = [];
-    if (targetWaist) hlines.push({ value: targetWaist, label: 'цель ' + f1(targetWaist) + ' см', color: '#b45309' });
-    else if (s.height) hlines.push({ value: s.height / 2, label: 'норма < ' + f1(s.height / 2) + ' см', color: '#b45309' });
-    charts.push(renderBodyChart({ title: 'Обхват талии, см', series: [{ label: 'Талия', color: '#27845A', points: waistPoints }], hlines }));
+    if (targetWaist) hlines.push({ value: targetWaist, label: 'цель ' + f1(targetWaist) + ' см', color: '#C2740A' });
+    else if (s.height) hlines.push({ value: s.height / 2, label: 'норма < ' + f1(s.height / 2) + ' см', color: '#C2740A' });
+    charts.push(renderBodyChart({ title: 'Обхват талии, см', series: [{ label: 'Талия', color: '#0FA97A', points: waistPoints }], hlines }));
   }
   if (bmiPoints.length){
-    charts.push(renderBodyChart({ title: 'ИМТ', series: [{ label: 'ИМТ', color: '#6d5aa5', points: bmiPoints }], band: [18.5, 25] }));
+    charts.push(renderBodyChart({ title: 'ИМТ', series: [{ label: 'ИМТ', color: '#A855F7', points: bmiPoints }], band: [18.5, 25] }));
   }
   if (fatPoints.length || musclePoints.length){
     const series = [];
-    if (fatPoints.length) series.push({ label: 'Жир, %', color: '#c53030', points: fatPoints });
-    if (musclePoints.length) series.push({ label: 'Мышцы, %', color: '#27845A', points: musclePoints });
+    if (fatPoints.length) series.push({ label: 'Жир, %', color: '#E11D48', points: fatPoints });
+    if (musclePoints.length) series.push({ label: 'Мышцы, %', color: '#0FA97A', points: musclePoints });
     charts.push(renderBodyChart({ title: 'Состав тела, %', series }));
   }
   if (charts.length){
@@ -1344,46 +1579,25 @@ function renderBody(){
 function renderBodyHomeCard(){
   const s = getBodySummary();
   if (!s.entries.length){
-    return `<section class="section">
-      <div class="section-header-row"><h2 class="section-title">Тело и ИМТ</h2></div>
-      <div class="rules-card" style="display:flex;justify-content:space-between;align-items:center;gap:14px;flex-wrap:wrap">
-        <div style="min-width:200px;flex:1"><div class="extra-title">Вес и обхват талии</div><div class="extra-text">Записывайте измерения — приложение посчитает ИМТ, покажет динамику и подскажет, как снижать вес без потери мышц.</div></div>
-        <button class="btn btn-primary" data-action="open-body">Записать вес</button>
-      </div>
-    </section>`;
+    return `<article class="dash-card body-snap">
+      <div class="card-top"><span class="eyebrow">Тело</span><button class="link-btn" data-action="nav" data-view="body">Открыть</button></div>
+      <h3>Вес и талия</h3>
+      <p class="muted small" style="margin:0 0 14px">Добавьте первое измерение — посчитаем ИМТ и покажем динамику.</p>
+      <div class="card-actions"><button class="btn btn-soft btn-block" data-action="open-body">Записать вес</button></div>
+    </article>`;
   }
-
-  const last = s.entries[s.entries.length - 1];
-  const daysAgo = Math.max(0, Math.round((new Date(toDateKey(new Date())) - new Date(toDateKey(new Date(last.date)))) / 86400000));
-  const agoText = daysAgo === 0 ? 'Измерение сегодня' : 'Последнее измерение ' + daysAgo + ' ' + pluralRu(daysAgo, 'день', 'дня', 'дней') + ' назад';
-  return `<section class="section">
-    <div class="section-header-row">
-      <h2 class="section-title">Тело и ИМТ</h2>
-      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
-        <span class="muted small">${agoText}</span>
-        <button class="btn btn-primary btn-sm" data-action="open-body">Записать</button>
-      </div>
+  const weightPoints = s.entries.filter(e => e.weight !== '').slice(-8).map(e => ({ value: +e.weight }));
+  const delta = s.weightDelta;
+  const cat = s.category;
+  return `<article class="dash-card body-snap">
+    <div class="card-top"><span class="eyebrow">Тело</span><button class="link-btn" data-action="nav" data-view="body">Подробнее</button></div>
+    <div class="body-snap-row">
+      <div class="snap-item"><span>Вес</span><strong>${s.lastWeight ? f1(s.lastWeight.value) + ' кг' : '—'}</strong>${delta != null ? `<em class="delta ${delta < 0 ? 'delta-down' : 'delta-up'}">${fmtSigned(delta, 1)} кг</em>` : ''}</div>
+      <div class="snap-item"><span>Талия</span><strong>${s.lastWaist ? f1(s.lastWaist.value) + ' см' : '—'}</strong></div>
+      <div class="snap-item"><span>ИМТ</span><strong>${s.bmi != null ? f1(s.bmi) : '—'}</strong>${cat ? `<em class="chip chip-cat" style="color:${cat.color}">${escapeHtml(cat.label)}</em>` : ''}</div>
     </div>
-    <div class="stats">
-      <div class="stat">
-        <div class="stat-value">${s.bmi != null ? f1(s.bmi) : '—'}</div>
-        <div class="stat-sub" style="color:${s.category ? s.category.color : 'var(--muted)'}">${escapeHtml(s.category ? s.category.label : 'нет роста')}</div>
-        <div class="stat-label">ИМТ</div>
-      </div>
-      <div class="stat">
-        <div class="stat-value">${s.lastWeight ? f1(s.lastWeight.value) + ' <span class="stat-sub">кг</span>' : '—'}</div>
-        <div class="stat-label">Вес${s.weightDelta != null ? ' • ' + fmtSigned(s.weightDelta, 1) + ' кг' : ''}</div>
-      </div>
-      <div class="stat">
-        <div class="stat-value">${s.lastWaist ? f1(s.lastWaist.value) + ' <span class="stat-sub">см</span>' : '—'}</div>
-        <div class="stat-label">Талия${s.waistDelta != null ? ' • ' + fmtSigned(s.waistDelta, 1) + ' см' : ''}</div>
-      </div>
-      <div class="stat">
-        <div class="stat-value">${s.whtr != null ? f2(s.whtr) : '—'}</div>
-        <div class="stat-label">Талия / рост (норма &lt; 0,5)</div>
-      </div>
-    </div>
-  </section>`;
+    ${weightPoints.length > 1 ? sparklineSvg(weightPoints) : ''}
+  </article>`;
 }
 
 /* ==================== РЕДАКТОР ПРОГРАММЫ ==================== */
@@ -1525,6 +1739,7 @@ function renderBackup(){
 
 function emptyState(title, text, backView){
   return `<div class="empty-state" style="margin-top:2rem">
+    <div class="empty-art">${maleAthleteSvg('empty-figure')}</div>
     <div class="empty-title">${escapeHtml(title)}</div>
     <div class="empty-text">${escapeHtml(text)}</div>
     ${backView ? `<button class="btn btn-primary" data-action="nav" data-view="${backView}">Вернуться</button>` : ''}
@@ -1935,10 +2150,37 @@ async function handleClick(e){
       state.view = t.dataset.view;
       if (state.view === 'history') state.params = {};
       if (state.view === 'backup') state.params = {};
+      if ($('#modal') && !$('#modal').hidden) closeModal(false);
       if (state.view === 'edit'){ openEditor('current'); return; }
       if (state.view === 'upload'){ state.uploadImage = null; }
       render(); return;
+    case 'open-more': openModal(moreMenuHtml(), 'info'); return;
+    case 'open-quick': openModal(quickActionsHtml(), 'info'); return;
+    case 'quick-start': {
+      if (state.data.activeWorkout){
+        closeModal(false);
+        state.view = 'workout';
+        render();
+        return;
+      }
+      const day = nextPlannedDay();
+      closeModal(false);
+      if (day) startWorkout(day.id);
+      else showToast('Сначала добавьте тренировочный день', 'error');
+      return;
+    }
+    case 'open-photos': {
+      closeModal(false);
+      state.view = 'body';
+      render();
+      setTimeout(() => {
+        const el = document.getElementById('photosSection');
+        if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }, 60);
+      return;
+    }
     case 'open-body': {
+      if ($('#modal') && !$('#modal').hidden) closeModal(false);
       state.view = 'body';
       state.measureDraft = null;
       render();

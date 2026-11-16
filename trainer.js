@@ -451,25 +451,24 @@ function renderTrainer(){
 }
 
 function renderTrainerHomeCard(){
+  const hasHistory = state.data.history.length > 0;
+  const next = typeof nextPlannedDay === 'function' ? nextPlannedDay() : null;
   const plan = buildAdaptationPlan();
+  const tip = (hasHistory && next && next.exercises.length) ? progressionFor(next.exercises[0]) : null;
   const counts = weeklyVolume();
-  const totalSets = Object.keys(counts).reduce((sum, key) => sum + counts[key], 0);
-  const lowGroups = MUSCLES.filter(m => volumeStatus(counts[m.id] || 0, MUSCLE_TARGETS[m.id] || [0, 0]) === 'low').length;
-  const withHistory = state.data.program.days.reduce((acc, day) =>
-    acc + day.exercises.filter(ex => exerciseRecords(ex).length).length, 0);
-  const total = state.data.program.days.reduce((acc, day) => acc + day.exercises.length, 0);
-  return `<section class="section">
-    <div class="section-header-row">
-      <h2 class="section-title">Тренер</h2>
-      <button class="btn btn-ghost btn-sm" data-action="nav" data-view="trainer">Открыть</button>
+  const low = MUSCLES.filter(m => volumeStatus(counts[m.id] || 0, MUSCLE_TARGETS[m.id] || [0, 0]) === 'low');
+  return `<article class="dash-card coach-card">
+    <div class="card-top"><span class="eyebrow">Тренер</span><button class="link-btn" data-action="nav" data-view="trainer">Открыть</button></div>
+    <h3>${hasHistory ? 'Совет на тренировку' : 'Первый шаг'}</h3>
+    ${tip
+      ? `<p class="coach-tip">${escapeHtml(tip.suggest)}</p><p class="muted small" style="margin:0">${escapeHtml(tip.why)}</p>`
+      : '<p class="muted small" style="margin:0 0 4px">Завершите тренировку — появятся рекомендации по весам, объёму и заменам под инвентарь.</p>'}
+    <div class="chip-row">
+      ${plan.length ? `<span class="chip chip-warn">${plan.length} ${pluralRu(plan.length, 'упражнение', 'упражнения', 'упражнений')} под инвентарь</span>` : ''}
+      ${hasHistory && low.length ? `<span class="chip">недобор: ${low.slice(0, 2).map(m => m.label.toLowerCase()).join(', ')}</span>` : ''}
     </div>
-    <div class="stats">
-      <div class="stat"><div class="stat-value">${withHistory} <span class="stat-sub">из ${total}</span></div><div class="stat-label">Упражнений с историей</div></div>
-      <div class="stat"><div class="stat-value">${totalSets ? lowGroups : '—'}</div><div class="stat-label">Групп мышц с недобором за неделю</div></div>
-      <div class="stat"><div class="stat-value">${plan.length}</div><div class="stat-label">Упражнений можно заменить под инвентарь</div></div>
-      <div class="stat"><div class="stat-value">${state.data.history.length}</div><div class="stat-label">Тренировок в истории</div></div>
-    </div>
-  </section>`;
+    <div class="card-actions"><button class="btn btn-soft btn-block" data-action="nav" data-view="trainer">${hasHistory ? 'План и объём' : 'Настроить инвентарь'}</button></div>
+  </article>`;
 }
 
 /* ---------- Каталог упражнений ---------- */

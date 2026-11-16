@@ -1,12 +1,12 @@
 {
-  "name": "Мой тренировочный дневник",
-  "short_name": "Дневник",
+  "name": "FitDiary — тренировки, питание и тело",
+  "short_name": "FitDiary",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",
   "orientation": "portrait",
-  "background_color": "#F4F6F8",
-  "theme_color": "#1a3a5c",
+  "background_color": "#F4F1FB",
+  "theme_color": "#6D4AFF",
   "lang": "ru",
   "icons": [
     { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }

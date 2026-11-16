@@ -148,20 +148,11 @@ function progressBar(value, target, color){
 }
 
 function macroChips(totals, targets){
-  const chip = (label, value, target, unit, color) => {
-    const over = target && value > target * 1.05;
-    return `<div class="macro-chip ${over ? 'macro-over' : ''}">
-      <span class="macro-name">${label}</span>
-      <strong>${f0(value)}${unit}</strong>
-      ${target ? `<span class="muted small">/ ${f0(target)}${unit}</span>` : ''}
-      ${progressBar(value, target, color)}
-    </div>`;
-  };
-  return `<div class="macro-grid">
-    ${chip('Калории', totals.kcal, targets.kcal, ' ккал', '#2878C8')}
-    ${chip('Белки', totals.protein, targets.protein, ' г', '#27845A')}
-    ${chip('Жиры', totals.fat, targets.fat, ' г', '#b45309')}
-    ${chip('Углеводы', totals.carbs, targets.carbs, ' г', '#6d5aa5')}
+  return `<div class="ring-row diet-rings">
+    ${ringCard({ value: totals.kcal, max: targets.kcal, color: '#7C5CFF', color2: '#EC4899', display: f0(totals.kcal), unit: 'ккал', title: 'Калории', sub: targets.kcal ? 'из ' + f0(targets.kcal) : 'цель не задана', size: 78 })}
+    ${ringCard({ value: totals.protein, max: targets.protein, color: '#0FA97A', color2: '#34D399', display: f0(totals.protein), unit: 'г', title: 'Белки', sub: targets.protein ? 'из ' + f0(targets.protein) : 'цель не задана', size: 78 })}
+    ${ringCard({ value: totals.fat, max: targets.fat, color: '#C2740A', color2: '#FBBF24', display: f0(totals.fat), unit: 'г', title: 'Жиры', sub: targets.fat ? 'из ' + f0(targets.fat) : 'цель не задана', size: 78 })}
+    ${ringCard({ value: totals.carbs, max: targets.carbs, color: '#EC4899', color2: '#A855F7', display: f0(totals.carbs), unit: 'г', title: 'Углеводы', sub: targets.carbs ? 'из ' + f0(targets.carbs) : 'цель не задана', size: 78 })}
   </div>`;
 }
 
@@ -191,8 +182,8 @@ function nutritionChartHtml(){
   if (!days.length) return '';
   return renderBodyChart({
     title: 'Калории по дням, ккал',
-    series: [{ label: 'Съедено', color: '#2878C8', points: days }],
-    hlines: targets.kcal ? [{ value: targets.kcal, label: 'цель ' + f0(targets.kcal) + ' ккал', color: '#b45309' }] : []
+    series: [{ label: 'Съедено', color: '#7C5CFF', points: days }],
+    hlines: targets.kcal ? [{ value: targets.kcal, label: 'цель ' + f0(targets.kcal) + ' ккал', color: '#C2740A' }] : []
   });
 }
 

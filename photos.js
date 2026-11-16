@@ -239,6 +239,7 @@ function renderPhotosSection(){
   let gallery;
   if (!photos.length){
     gallery = `<div class="empty-state" style="padding:24px 16px">
+      <div class="empty-art">${maleAthleteSvg('empty-figure')}</div>
       <div class="empty-title">Пока нет фото</div>
       <div class="empty-text">Фото в одинаковых условиях (свет, поза, расстояние) показывают прогресс раньше, чем весы.</div>
     </div>`;

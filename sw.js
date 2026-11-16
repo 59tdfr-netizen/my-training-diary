@@ -1,4 +1,4 @@
-﻿const CACHE = 'training-diary-v5';
+﻿const CACHE = 'training-diary-v6';
 const ASSETS = ['./', './index.html', './catalog.js', './ai.js', './photos.js', './nutrition.js', './trainer.js', './features.js', './app.js', './manifest.json', './icon.svg'];
 
 self.addEventListener('install', e => {
