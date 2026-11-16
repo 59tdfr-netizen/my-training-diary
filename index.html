@@ -246,6 +246,88 @@ main { max-width: 1200px; margin: 0 auto; padding: 24px 24px 48px; }
 .delta-up { color: var(--warn); background: var(--warn-light); }
 .rec-card { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px 20px; box-shadow: var(--shadow); margin-bottom: 12px; }
 .rec-card h3 { margin: 0 0 8px; font-size: 15px; color: var(--text); }
+
+/* ===== Тренер, питание, фото, AI ===== */
+.btn-disabled { opacity: .5; pointer-events: none; }
+.macro-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+.macro-chip { background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 8px 10px; font-size: 13px; }
+.macro-chip strong { font-size: 15px; }
+.macro-name { display: block; font-size: 12px; color: var(--muted); }
+.macro-over { border-color: #f4d9b0; background: var(--warn-light); }
+.progress { height: 6px; background: #e9edf2; border-radius: 999px; overflow: hidden; margin-top: 5px; }
+.progress-fill { height: 100%; border-radius: 999px; transition: width .3s; }
+.progress-over .progress-fill { background: var(--danger) !important; }
+.meal-block { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px 14px; margin-bottom: 10px; box-shadow: var(--shadow); }
+.meal-head { display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-bottom: 6px; font-size: 14px; }
+.food-row { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-top: 1px solid var(--border); flex-wrap: wrap; }
+.food-main { flex: 1; min-width: 160px; }
+.food-name { font-size: 14px; color: var(--text); }
+.food-grams { display: inline-flex; align-items: center; gap: 4px; }
+.ai-result { background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 12px 14px; }
+.ai-result-head { display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-bottom: 6px; }
+.ai-summary { margin: 0 0 8px; font-size: 14px; }
+.ai-sub { margin-top: 8px; }
+.ai-table { display: flex; flex-direction: column; gap: 4px; margin: 8px 0; }
+.ai-table-row { display: flex; justify-content: space-between; gap: 12px; font-size: 14px; padding: 5px 0; border-bottom: 1px dashed var(--border); }
+.zone-chips { display: flex; gap: 6px; flex-wrap: wrap; margin: 6px 0; }
+.zone-chip { font-size: 12px; font-weight: 600; padding: 2px 8px; border-radius: 999px; background: var(--primary-light); color: var(--primary); }
+.zone-chip.zone-высокий { background: var(--danger-light); color: var(--danger); }
+.zone-chip.zone-средний { background: var(--warn-light); color: var(--warn); }
+.zone-chip.zone-низкий { background: var(--success-light); color: var(--success); }
+.trainer-day { border-top: 1px solid var(--border); padding-top: 10px; margin-top: 10px; }
+.trainer-day:first-of-type { border-top: none; padding-top: 0; margin-top: 0; }
+.trainer-day-title { font-weight: 600; font-size: 14px; margin-bottom: 6px; }
+.prog-row { display: flex; justify-content: space-between; gap: 12px; align-items: center; padding: 7px 0; border-top: 1px dashed var(--border); flex-wrap: wrap; }
+.prog-main { flex: 1; min-width: 160px; }
+.prog-name { font-size: 14px; }
+.prog-suggest { font-size: 13px; font-weight: 600; padding: 3px 9px; border-radius: 999px; white-space: nowrap; }
+.prog-side { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; max-width: 62%; }
+.prog-why { max-width: 320px; text-align: right; line-height: 1.35; }
+@media (max-width: 640px) { .prog-side { align-items: flex-start; max-width: 100%; } .prog-why { text-align: left; } }
+.tone-up { background: var(--success-light); color: var(--success); }
+.tone-hold { background: var(--primary-light); color: var(--primary); }
+.tone-deload { background: var(--warn-light); color: var(--warn); }
+.tone-start { background: #eef1f4; color: var(--muted); }
+.volume-row { display: grid; grid-template-columns: 110px 1fr 80px; gap: 10px; align-items: center; padding: 4px 0; font-size: 13px; }
+.volume-bar { height: 8px; background: #e9edf2; border-radius: 999px; overflow: hidden; }
+.volume-bar i { display: block; height: 100%; border-radius: 999px; background: var(--primary); }
+.volume-bar i.volume-low { background: var(--warn); }
+.volume-bar i.volume-ok { background: var(--success); }
+.volume-bar i.volume-high { background: #f2994a; }
+.volume-count { text-align: right; }
+.volume-name { font-size: 13px; }
+.equip-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 6px 12px; }
+.equip-check { display: inline-flex; align-items: center; gap: 6px; font-size: 14px; cursor: pointer; }
+.equip-check input { width: 16px; height: 16px; accent-color: var(--primary); }
+.adapt-row { display: flex; justify-content: space-between; gap: 12px; padding: 8px 0; border-top: 1px dashed var(--border); flex-wrap: wrap; font-size: 14px; }
+.adapt-main { flex: 1; min-width: 180px; }
+.adapt-to { font-weight: 600; color: var(--primary); }
+.catalog-list { max-height: 50vh; overflow-y: auto; margin-top: 6px; }
+.catalog-row { display: flex; justify-content: space-between; gap: 10px; align-items: center; padding: 8px 0; border-top: 1px solid var(--border); }
+.catalog-main { flex: 1; min-width: 160px; }
+.catalog-name { font-size: 14px; font-weight: 500; }
+.photo-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
+@media (min-width: 720px) { .photo-grid { grid-template-columns: repeat(4, 1fr); } }
+.photo-card { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; box-shadow: var(--shadow); display: flex; flex-direction: column; }
+.photo-thumb { cursor: zoom-in; background: #eef1f4; aspect-ratio: 3 / 4; }
+.photo-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.photo-meta { padding: 8px 10px 4px; font-size: 13px; }
+.photo-date { font-weight: 600; }
+.photo-ai-badge { margin: 0 10px; font-size: 11px; font-weight: 600; color: var(--success); }
+.photo-actions { display: flex; gap: 4px; padding: 8px 10px 10px; margin-top: auto; flex-wrap: wrap; }
+.modal-photo-wrap { background: #eef1f4; border-radius: var(--radius-sm); overflow: hidden; max-height: 60vh; display: flex; justify-content: center; }
+.modal-photo-wrap img { max-width: 100%; max-height: 60vh; object-fit: contain; }
+.compare-block { margin-top: 14px; }
+.compare-selects { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; }
+.compare-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px; }
+.compare-cell { background: #eef1f4; border: 1px solid var(--border); border-radius: var(--radius-sm); min-height: 160px; display: flex; align-items: center; justify-content: center; overflow: hidden; }
+.compare-cell img { max-width: 100%; max-height: 420px; object-fit: contain; }
+.compare-empty { color: var(--muted); font-size: 13px; padding: 30px 10px; }
+.compose-fields { margin-top: 12px; border-top: 1px solid var(--border); padding-top: 10px; }
+.compose-fields summary { cursor: pointer; font-weight: 600; font-size: 14px; }
+.compose-fields[open] summary { margin-bottom: 8px; }
+.edit-ex-extra { display: grid; grid-template-columns: 1fr auto; gap: 8px; }
+@media (max-width: 640px) { .edit-ex-extra { grid-template-columns: 1fr; } }
 </style>
 </head>
 <body>
@@ -257,11 +339,13 @@ main { max-width: 1200px; margin: 0 auto; padding: 24px 24px 48px; }
     </div>
     <nav class="topnav" id="topnav">
       <button class="nav-btn" data-action="nav" data-view="home">Главная</button>
-      <button class="nav-btn" data-action="nav" data-view="body">Тело и ИМТ</button>
-      <button class="nav-btn" data-action="nav" data-view="edit">Редактировать программу</button>
-      <button class="nav-btn" data-action="nav" data-view="upload">Загрузить новую программу</button>
-      <button class="nav-btn" data-action="nav" data-view="history">История тренировок</button>
-      <button class="nav-btn" data-action="nav" data-view="backup">Резервная копия</button>
+      <button class="nav-btn" data-action="nav" data-view="trainer">Тренер</button>
+      <button class="nav-btn" data-action="nav" data-view="nutrition">Питание</button>
+      <button class="nav-btn" data-action="nav" data-view="body">Тело</button>
+      <button class="nav-btn" data-action="nav" data-view="history">История</button>
+      <button class="nav-btn" data-action="nav" data-view="edit">Программа</button>
+      <button class="nav-btn" data-action="nav" data-view="upload">Загрузка</button>
+      <button class="nav-btn" data-action="nav" data-view="backup">Бэкап</button>
     </nav>
   </div>
 </header>
@@ -274,6 +358,12 @@ main { max-width: 1200px; margin: 0 auto; padding: 24px 24px 48px; }
   <div class="modal-content" id="modalContent"></div>
 </div>
 
+<script src="catalog.js"></script>
+<script src="ai.js"></script>
+<script src="photos.js"></script>
+<script src="nutrition.js"></script>
+<script src="trainer.js"></script>
+<script src="features.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

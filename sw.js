@@ -1,5 +1,5 @@
-const CACHE = 'training-diary-v4';
-const ASSETS = ['./', './index.html', './app.js', './manifest.json', './icon.svg'];
+﻿const CACHE = 'training-diary-v5';
+const ASSETS = ['./', './index.html', './catalog.js', './ai.js', './photos.js', './nutrition.js', './trainer.js', './features.js', './app.js', './manifest.json', './icon.svg'];
 
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(ASSETS)).then(() => self.skipWaiting()));
@@ -11,7 +11,7 @@ self.addEventListener('activate', e => {
 self.addEventListener('fetch', e => {
   if (e.request.method !== 'GET') return;
 
-  // Навигация: сначала сеть (чтобы обновления подхватывались), офлайн — из кэша.
+  // РќР°РІРёРіР°С†РёСЏ: СЃРЅР°С‡Р°Р»Р° СЃРµС‚СЊ (С‡С‚РѕР±С‹ РѕР±РЅРѕРІР»РµРЅРёСЏ РїРѕРґС…РІР°С‚С‹РІР°Р»РёСЃСЊ), РѕС„Р»Р°Р№РЅ вЂ” РёР· РєСЌС€Р°.
   if (e.request.mode === 'navigate') {
     e.respondWith(
       fetch(e.request).then(res => {
@@ -23,7 +23,7 @@ self.addEventListener('fetch', e => {
     return;
   }
 
-  // Остальные GET-запросы: кэш, затем сеть с сохранением копии.
+  // РћСЃС‚Р°Р»СЊРЅС‹Рµ GET-Р·Р°РїСЂРѕСЃС‹: РєСЌС€, Р·Р°С‚РµРј СЃРµС‚СЊ СЃ СЃРѕС…СЂР°РЅРµРЅРёРµРј РєРѕРїРёРё.
   e.respondWith(
     caches.match(e.request).then(cached => {
       if (cached) return cached;

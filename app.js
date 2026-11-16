@@ -12,6 +12,12 @@ function escapeHtml(s){
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
     .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
 }
+/* Значение для CSV: экранирует кавычки и нейтрализует формулы Excel. */
+function csvCell(value){
+  let s = String(value == null ? '' : value);
+  if (/^[=+\-@\t\r]/.test(s)) s = "'" + s;
+  return '"' + s.replace(/"/g, '""') + '"';
+}
 function toDateKey(d){ return d.getFullYear() + '-' + pad2(d.getMonth()+1) + '-' + pad2(d.getDate()); }
 function fmtDate(iso){
   const d = new Date(iso); if (isNaN(d)) return '—';
@@ -63,7 +69,7 @@ const DEFAULT_PROGRAM = {
       id: 'day-wed', name: "Среда", focus: "Верх тела", color: "blue",
       exercises: [
         { id:'ex-wed-1', name:"Тяга гантели одной рукой", sets:3, reps:"10", unit:"kg", startWeight:"6–8", note:"на каждую руку" },
-        { id:'ex-wed-2', name:"Жим гантелей лёжа", sets:3, reps:"10", unit:"kg", startWeight:"5–6", note:"" },
+        { id:'ex-wed-2', name:"Жим гантелей лёжа", sets:3, reps:"10", unit:"kg", startWeight:"5–6", note:"на полу или скамье", equipment:['dumbbells'] },
         { id:'ex-wed-3', name:"Разведения с резинкой (в наклоне)", sets:3, reps:"12", unit:"reps", startWeight:"", note:"лёгкая/средняя резинка" },
         { id:'ex-wed-4', name:"Жим гантелей стоя", sets:2, reps:"8–10", unit:"kg", startWeight:"4–5", note:"" },
         { id:'ex-wed-5', name:"Планка", sets:3, reps:"20–30", unit:"sec", startWeight:"", note:"секунд" },
@@ -89,7 +95,7 @@ const DEFAULT_PROGRAM = {
 const STORAGE_KEY = 'training_diary_v1';
 let activeTimer = { exIdx: null, timeLeft: 0, intervalId: null, totalTime: 90 };
 
-const state = { view:'home', params:{}, data:null, editDraft:null, editMode:'current', uploadImage:null, historyDraft:null, measureDraft:null, profileOpen:false };
+const state = { view:'home', params:{}, data:null, editDraft:null, editMode:'current', uploadImage:null, historyDraft:null, measureDraft:null, profileOpen:false, nutritionDate:null, nutritionDraft:null, aiDish:null, scaleAI:null, photoCompare:{ a:'', b:'' } };
 
 function ensureIds(program){
   program.days = program.days || [];
@@ -117,9 +123,12 @@ function initData(){
   const raw = loadRaw();
   if (!raw){
     state.data = {
-      version: 1, meta: { createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), lastBackupAt: new Date().toISOString() },
-      program: deepClone(DEFAULT_PROGRAM), programArchive: [], history: [], activeWorkout: null, body: normalizeBody(null)
+      version: 2, meta: { createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), lastBackupAt: new Date().toISOString() },
+      program: deepClone(DEFAULT_PROGRAM), programArchive: [], history: [], activeWorkout: null,
+      body: normalizeBody(null), nutrition: normalizeNutrition(null), inventory: normalizeInventory(null),
+      ai: normalizeAI(null), photos: []
     };
+    enrichProgramMetadata(state.data.program);
     ensureIds(state.data.program); saveData(); return;
   }
   raw.program = raw.program || deepClone(DEFAULT_PROGRAM);
@@ -127,6 +136,11 @@ function initData(){
   raw.history = raw.history || [];
   raw.activeWorkout = raw.activeWorkout || null;
   raw.body = normalizeBody(raw.body);
+  raw.nutrition = normalizeNutrition(raw.nutrition);
+  raw.inventory = normalizeInventory(raw.inventory);
+  raw.ai = normalizeAI(raw.ai);
+  raw.photos = normalizePhotos(raw.photos);
+  enrichProgramMetadata(raw.program);
   raw.meta = raw.meta || {};
   if (!raw.meta.lastBackupAt) raw.meta.lastBackupAt = new Date().toISOString();
   ensureIds(raw.program);
@@ -236,6 +250,8 @@ function render(){
   let html = '';
   switch(state.view){
     case 'home': html = renderHome(); break;
+    case 'trainer': html = renderTrainer(); break;
+    case 'nutrition': html = renderNutrition(); break;
     case 'body': html = renderBody(); break;
     case 'workout': html = renderWorkout(); break;
     case 'history': html = renderHistory(); break;
@@ -248,8 +264,11 @@ function render(){
     default: html = renderHome();
   }
   app.innerHTML = html;
+  if (typeof hydratePhotoImages === 'function'){
+    Promise.resolve(hydratePhotoImages(app)).catch(() => {});
+  }
   $('#brandSub').textContent = state.data.program.name + ' • ' + (state.data.program.subtitle || '');
-  const navMap = { home:'home', body:'body', workout:'home', edit:'edit', upload:'upload', history:'history', 'history-detail':'history', 'history-edit':'history', 'exercise-history':'history', backup:'backup' };
+  const navMap = { home:'home', trainer:'trainer', nutrition:'nutrition', body:'body', workout:'home', edit:'edit', upload:'upload', history:'history', 'history-detail':'history', 'history-edit':'history', 'exercise-history':'history', backup:'backup' };
   $$('#topnav .nav-btn').forEach(b => b.classList.toggle('active', b.dataset.view === navMap[state.view]));
   
   if (activeTimer.exIdx !== null && state.view !== 'workout') stopTimer(activeTimer.exIdx);
@@ -384,6 +403,8 @@ function renderHome(){
     </div>
   </section>`;
 
+  html += renderTrainerHomeCard();
+  html += renderNutritionHomeCard();
   html += renderBodyHomeCard();
 
   if (state.data.history.length > 0) {
@@ -720,12 +741,15 @@ function renderChart(points, title){
 
 /* ==================== ТЕЛО, ВЕС И ИМТ ==================== */
 const BODY_PROFILE_DEFAULTS = { height: '', gender: '', age: '', activity: 'medium', targetWeight: '', waistTarget: '' };
-const BODY_RANGES = { weight: [25, 350], waist: [35, 220], hips: [40, 220], height: [100, 250], age: [10, 100] };
+const BODY_RANGES = { weight: [25, 350], waist: [35, 220], hips: [40, 220], height: [100, 250], age: [10, 100], bodyFat: [2, 70], muscle: [5, 70], water: [20, 75], visceral: [1, 30] };
 const PROFILE_FIELD_MAP = {
   'profile-height': 'height', 'profile-age': 'age', 'profile-target': 'targetWeight',
   'profile-waist-target': 'waistTarget', 'profile-gender': 'gender', 'profile-activity': 'activity'
 };
-const MEASURE_FIELD_MAP = { 'm-date': 'date', 'm-weight': 'weight', 'm-waist': 'waist', 'm-hips': 'hips', 'm-note': 'note' };
+const MEASURE_FIELD_MAP = {
+  'm-date': 'date', 'm-weight': 'weight', 'm-waist': 'waist', 'm-hips': 'hips', 'm-note': 'note',
+  'm-fat': 'bodyFat', 'm-muscle': 'muscle', 'm-water': 'water', 'm-visceral': 'visceral'
+};
 const BMI_CATEGORIES = [
   { max: 16, key: 'severe-under', label: 'Выраженный дефицит массы', color: '#c53030' },
   { max: 18.5, key: 'under', label: 'Недостаточная масса', color: '#b45309' },
@@ -780,6 +804,10 @@ function normalizeBody(raw){
     weight: numOrEmpty(e.weight),
     waist: numOrEmpty(e.waist),
     hips: numOrEmpty(e.hips),
+    bodyFat: numOrEmpty(e.bodyFat),
+    muscle: numOrEmpty(e.muscle),
+    water: numOrEmpty(e.water),
+    visceral: numOrEmpty(e.visceral),
     note: typeof e.note === 'string' ? e.note : ''
   }));
   return b;
@@ -1046,7 +1074,7 @@ function buildBodyAdvice(){
   if (lastWaist != null){
     const whtrTxt = s.whtr != null ? f2(s.whtr) : '—';
     waistItems.push(`Талия <strong>${f1(lastWaist)} см</strong>, отношение талия/рост — ${whtrTxt}. Здоровый ориентир: меньше ${f1(halfHeight)} см (меньше 0,5 роста).`);
-    if (s.whtr >= 0.5) waistItems.push('Талия больше половины роста — признак висцерального жира. Он уходит первым при дефиците калорий и силовых тренировках.');
+    if (s.whtr >= 0.5) waistItems.push('Талия на уровне половины роста или больше — зона внимания: это признак висцерального жира. Он уходит первым при дефиците калорий и силовых тренировках.');
     else waistItems.push('Талия в безопасном диапазоне — хороший маркер того, что жир не копится в области живота.');
     if (s.waistDelta != null && Math.abs(s.waistDelta) >= 0.5) waistItems.push(`С прошлого измерения талия ${s.waistDelta < 0 ? 'уменьшилась' : 'увеличилась'} на ${f1(Math.abs(s.waistDelta))} см.`);
     const risk = waistRisk(lastWaist, p.gender);
@@ -1087,13 +1115,17 @@ function buildBodyAdvice(){
   ]});
 
   const water = lastW != null ? f1(lastW * 0.03) : null;
-  groups.push({ title: 'Привычки и замеры', items: [
+  const habitItems = [
     'Сон 7–9 часов. Недосып повышает аппетит и тянет к сладкому.',
     water ? `Вода: примерно ${water} л в день (30 мл на кг веса). Чай, кофе и суп тоже идут в счёт.` : 'Вода: примерно 30 мл на кг веса в день.',
     'Вес: утром, натощак, после туалета, в одной одежде, 2–4 раза в неделю. Смотрите на среднюю за неделю.',
     'Плато 2–3 недели — норма. Если талия уменьшается, а вес стоит, значит уходит жир и приходят мышцы.',
     'Раз в месяц делайте фото в одинаковых условиях: изменения видны раньше, чем на весах.'
-  ]});
+  ];
+  if (s.entries.some(e => e.bodyFat !== '' || e.muscle !== '')){
+    habitItems.push('Процент жира и мышц сравнивайте только между замерами на одних и тех же весах: у разных моделей разные алгоритмы и абсолютные значения.');
+  }
+  groups.push({ title: 'Привычки и замеры', items: habitItems });
 
   const med = [
     'ИМТ — грубый показатель: он не отличает мышцы от жира. У людей с развитой мускулатурой ИМТ может быть высоким без лишнего жира.',
@@ -1113,7 +1145,7 @@ function buildBodyAdvice(){
 
 function ensureMeasureDraft(){
   if (!state.measureDraft){
-    state.measureDraft = { id: null, date: toDateKey(new Date()), weight: '', waist: '', hips: '', note: '' };
+    state.measureDraft = { id: null, date: toDateKey(new Date()), weight: '', waist: '', hips: '', bodyFat: '', muscle: '', water: '', visceral: '', note: '' };
   }
   return state.measureDraft;
 }
@@ -1128,6 +1160,8 @@ function renderBody(){
   const bmiPoints = s.height
     ? s.entries.filter(e => e.weight !== '').map(e => ({ date: e.date, value: calcBMI(e.weight, s.height) })).filter(x => x.value != null)
     : [];
+  const fatPoints = s.entries.filter(e => e.bodyFat !== '').map(e => ({ date: e.date, value: +e.bodyFat }));
+  const musclePoints = s.entries.filter(e => e.muscle !== '').map(e => ({ date: e.date, value: +e.muscle }));
   const targetWeight = numOrEmpty(p.targetWeight);
   const targetWaist = numOrEmpty(p.waistTarget);
   const cat = s.category;
@@ -1184,10 +1218,24 @@ function renderBody(){
       <label class="field"><span>Обхват бёдер, см <span class="muted">(необяз.)</span></span><input type="number" step="0.5" min="40" max="220" inputmode="decimal" class="input" data-field="m-hips" value="${draft.hips !== '' ? escapeHtml(draft.hips) : ''}" placeholder="—"></label>
     </div>
     <label class="field" style="margin-top:10px"><span>Комментарий</span><input type="text" class="input" data-field="m-note" value="${escapeHtml(draft.note || '')}" placeholder="например, после отпуска"></label>
+    <details class="compose-fields" ${(draft.bodyFat !== '' || draft.muscle !== '' || draft.water !== '' || draft.visceral !== '') ? 'open' : ''}>
+      <summary>Состав тела с умных весов <span class="muted small">(необязательно)</span></summary>
+      <div class="form-grid" style="margin-top:10px">
+        <label class="field"><span>Жир, %</span><input type="number" step="0.1" min="2" max="70" inputmode="decimal" class="input" data-field="m-fat" value="${draft.bodyFat !== '' ? escapeHtml(draft.bodyFat) : ''}" placeholder="—"></label>
+        <label class="field"><span>Мышцы, %</span><input type="number" step="0.1" min="5" max="70" inputmode="decimal" class="input" data-field="m-muscle" value="${draft.muscle !== '' ? escapeHtml(draft.muscle) : ''}" placeholder="—"></label>
+        <label class="field"><span>Вода, %</span><input type="number" step="0.1" min="20" max="75" inputmode="decimal" class="input" data-field="m-water" value="${draft.water !== '' ? escapeHtml(draft.water) : ''}" placeholder="—"></label>
+        <label class="field"><span>Висцеральный жир</span><input type="number" step="1" min="1" max="30" inputmode="numeric" class="input" data-field="m-visceral" value="${draft.visceral !== '' ? escapeHtml(draft.visceral) : ''}" placeholder="—"></label>
+      </div>
+      <p class="muted small" style="margin:8px 0 0">Эти поля есть не у всех весов. Если у вас есть приложение весов — перепишите показатели, либо нажмите «Разобрать фото весов» и проверьте числа.</p>
+    </details>
     <div class="section-actions">
       <button class="btn btn-primary" data-action="save-measurement">${editMode ? 'Обновить измерение' : 'Сохранить измерение'}</button>
       <button class="btn btn-ghost" data-action="reset-measure-form">${editMode ? 'Отменить редактирование' : 'Очистить'}</button>
+      <label class="btn btn-ghost ${aiConfigured() ? '' : 'btn-disabled'}" style="cursor:pointer">Разобрать фото весов
+        <input type="file" id="scaleFile" accept="image/*" capture="environment" hidden ${aiConfigured() ? '' : 'disabled'}>
+      </label>
     </div>
+    ${aiConfigured() ? '' : '<p class="muted small" style="margin:6px 0 0">Распознавание фото весов работает после подключения AI-ключа в разделе «Тренер».</p>'}
   </div></section>`;
 
   html += `<section class="section"><details class="profile-card" id="profileDetails" ${state.profileOpen ? 'open' : ''}>
@@ -1228,10 +1276,16 @@ function renderBody(){
   if (bmiPoints.length){
     charts.push(renderBodyChart({ title: 'ИМТ', series: [{ label: 'ИМТ', color: '#6d5aa5', points: bmiPoints }], band: [18.5, 25] }));
   }
+  if (fatPoints.length || musclePoints.length){
+    const series = [];
+    if (fatPoints.length) series.push({ label: 'Жир, %', color: '#c53030', points: fatPoints });
+    if (musclePoints.length) series.push({ label: 'Мышцы, %', color: '#27845A', points: musclePoints });
+    charts.push(renderBodyChart({ title: 'Состав тела, %', series }));
+  }
   if (charts.length){
     html += `<section class="section"><h2 class="section-title">Динамика</h2><div class="chart-stack">${charts.join('')}</div></section>`;
   } else {
-    html += `<section class="section"><div class="rules-card"><p class="muted" style="margin:0">Добавьте первое измерение — здесь появятся графики веса, талии и ИМТ.</p></div></section>`;
+    html += `<section class="section"><div class="rules-card"><p class="muted" style="margin:0">Добавьте первое измерение — здесь появятся графики веса, талии, ИМТ и состава тела.</p></div></section>`;
   }
 
   let listHtml;
@@ -1259,6 +1313,10 @@ function renderBody(){
             ${item.w != null ? `<span>Вес <b>${f1(item.w)} кг</b> ${deltaBadge(item.dW, 'кг')}</span>` : ''}
             ${item.wa != null ? `<span>Талия <b>${f1(item.wa)} см</b> ${deltaBadge(item.dWa, 'см')}</span>` : ''}
             ${hips != null ? `<span>Бёдра <b>${f1(hips)} см</b></span>` : ''}
+            ${e.bodyFat !== '' ? `<span>Жир <b>${f1(+e.bodyFat)}%</b></span>` : ''}
+            ${e.muscle !== '' ? `<span>Мышцы <b>${f1(+e.muscle)}%</b></span>` : ''}
+            ${e.water !== '' ? `<span>Вода <b>${f1(+e.water)}%</b></span>` : ''}
+            ${e.visceral !== '' ? `<span>Висцеральный <b>${f0(+e.visceral)}</b></span>` : ''}
             ${bmi != null ? `<span class="muted">ИМТ ${f1(bmi)}</span>` : ''}
           </div>
           ${e.note ? `<div class="muted small" style="margin-top:2px">${escapeHtml(e.note)}</div>` : ''}
@@ -1271,6 +1329,8 @@ function renderBody(){
     }).join('') + '</div>';
   }
   html += `<section class="section"><h2 class="section-title">Все измерения</h2>${listHtml}</section>`;
+
+  html += renderPhotosSection();
 
   const advice = buildBodyAdvice();
   html += `<section class="section"><h2 class="section-title">Рекомендации</h2>
@@ -1377,10 +1437,17 @@ function renderEdit(){
           <button class="btn btn-ghost btn-sm" data-action="ex-down" data-day="${di}" data-ex="${ei}" title="Ниже">↓</button>
           <button class="btn btn-danger btn-sm" data-action="remove-ex" data-day="${di}" data-ex="${ei}" title="Удалить">×</button>
         </div>
-        <input class="input edit-ex-note" data-field="ex-note" data-day="${di}" data-ex="${ei}" value="${escapeHtml(ex.note || '')}" placeholder="Примечание (необязательно)">
+        <div class="edit-ex-extra">
+          <input class="input" data-field="ex-note" data-day="${di}" data-ex="${ei}" value="${escapeHtml(ex.note || '')}" placeholder="Примечание (необязательно)">
+          <select class="input" data-field="ex-muscle" data-day="${di}" data-ex="${ei}" title="Основная группа мышц">
+            <option value="">Группа мышц…</option>
+            ${MUSCLES.map(m => `<option value="${m.id}" ${(ex.muscle || (ex.muscles && ex.muscles[0])) === m.id ? 'selected' : ''}>${m.label}</option>`).join('')}
+          </select>
+        </div>
       </div>`;
     });
-    html += `<button class="edit-add" data-action="add-ex" data-day="${di}">+ Добавить упражнение</button></div>`;
+    html += `<button class="edit-add" data-action="add-ex" data-day="${di}">+ Добавить упражнение</button>
+      <button class="edit-add" data-action="open-catalog" data-day="${di}" style="margin-left:8px">+ Из каталога под инвентарь</button></div>`;
   });
   html += `<button class="btn btn-ghost" data-action="add-day">+ Добавить тренировочный день</button></div></section>`;
   return html;
@@ -1396,12 +1463,23 @@ function commitEditDraftFromInput(t){
   else if (f === 'day-name') d.days[di].name = t.value;
   else if (f === 'day-focus') d.days[di].focus = t.value;
   else if (f === 'day-color') d.days[di].color = t.value;
-  else if (f === 'ex-name') d.days[di].exercises[ei].name = t.value;
+  else if (f === 'ex-name'){
+    const ex = d.days[di].exercises[ei];
+    ex.name = t.value;
+    const meta = inferExerciseMeta(t.value);
+    ex.equipment = meta.equipment;
+    if (!ex.muscle){ ex.muscles = meta.muscles; ex.pattern = meta.pattern; }
+  }
   else if (f === 'ex-sets') d.days[di].exercises[ei].sets = Math.max(1, parseInt(t.value) || 1);
   else if (f === 'ex-reps') d.days[di].exercises[ei].reps = t.value;
   else if (f === 'ex-unit') d.days[di].exercises[ei].unit = t.value;
   else if (f === 'ex-start') d.days[di].exercises[ei].startWeight = t.value;
   else if (f === 'ex-note') d.days[di].exercises[ei].note = t.value;
+  else if (f === 'ex-muscle'){
+    const ex = d.days[di].exercises[ei];
+    ex.muscle = t.value;
+    if (t.value) ex.muscles = [t.value].concat((ex.muscles || []).filter(m => m !== t.value));
+  }
 }
 
 /* ==================== ЗАГРУЗКА ПРОГРАММЫ ==================== */
@@ -1480,11 +1558,16 @@ async function saveMeasurement(){
   const weight = parseRange(d.weight, BODY_RANGES.weight);
   const waist = parseRange(d.waist, BODY_RANGES.waist);
   const hips = parseRange(d.hips, BODY_RANGES.hips);
-  if (weight === null && waist === null && hips === null){
-    showToast('Укажите вес или обхват талии', 'error'); return;
+  const bodyFat = parseRange(d.bodyFat, BODY_RANGES.bodyFat);
+  const muscle = parseRange(d.muscle, BODY_RANGES.muscle);
+  const water = parseRange(d.water, BODY_RANGES.water);
+  const visceral = parseRange(d.visceral, BODY_RANGES.visceral);
+  const values = [weight, waist, hips, bodyFat, muscle, water, visceral];
+  if (values.every(v => v === null)){
+    showToast('Укажите вес, обхват талии или показатели состава тела', 'error'); return;
   }
-  if ([weight, waist, hips].some(v => Number.isNaN(v))){
-    showToast('Проверьте значения: вес 25–350 кг, талия 35–220 см, бёдра 40–220 см', 'error'); return;
+  if (values.some(v => Number.isNaN(v))){
+    showToast('Проверьте значения: вес 25–350, талия 35–220, бёдра 40–220, жир 2–70%, мышцы 5–70%, вода 20–75%, висцеральный 1–30', 'error'); return;
   }
   const iso = dateKeyToNoonIso(d.date) || new Date().toISOString();
   const body = ensureBody();
@@ -1498,20 +1581,21 @@ async function saveMeasurement(){
       target = sameDay;
     }
   }
+  const fields = {
+    weight: weight === null ? '' : weight,
+    waist: waist === null ? '' : waist,
+    hips: hips === null ? '' : hips,
+    bodyFat: bodyFat === null ? '' : bodyFat,
+    muscle: muscle === null ? '' : muscle,
+    water: water === null ? '' : water,
+    visceral: visceral === null ? '' : visceral
+  };
   if (target){
-    target.date = iso;
-    target.weight = weight === null ? '' : weight;
-    target.waist = waist === null ? '' : waist;
-    target.hips = hips === null ? '' : hips;
-    target.note = d.note || '';
+    Object.assign(target, fields, { date: iso, note: d.note || '' });
   } else {
-    body.entries.push({
-      id: uid(), date: iso, createdAt: new Date().toISOString(),
-      weight: weight === null ? '' : weight,
-      waist: waist === null ? '' : waist,
-      hips: hips === null ? '' : hips,
-      note: d.note || ''
-    });
+    body.entries.push(Object.assign({
+      id: uid(), date: iso, createdAt: new Date().toISOString(), note: d.note || ''
+    }, fields));
   }
   state.measureDraft = null;
   saveData(); render();
@@ -1522,7 +1606,9 @@ function editMeasurement(id){
   if (!e) return;
   state.measureDraft = {
     id: e.id, date: toDateKey(new Date(e.date)),
-    weight: e.weight, waist: e.waist, hips: e.hips, note: e.note || ''
+    weight: e.weight, waist: e.waist, hips: e.hips,
+    bodyFat: e.bodyFat, muscle: e.muscle, water: e.water, visceral: e.visceral,
+    note: e.note || ''
   };
   render();
   const el = document.querySelector('[data-field="m-weight"]');
@@ -1543,7 +1629,7 @@ function exportMeasurementsCSV(){
   const entries = getBodyEntries();
   if (!entries.length){ showToast('Пока нет измерений для экспорта', 'error'); return; }
   const height = numOrEmpty(ensureBody().profile.height);
-  const rows = [['Дата', 'Вес, кг', 'Обхват талии, см', 'Обхват бёдер, см', 'ИМТ', 'Комментарий']];
+  const rows = [['Дата', 'Вес, кг', 'Обхват талии, см', 'Обхват бёдер, см', 'Жир, %', 'Мышцы, %', 'Вода, %', 'Висцеральный жир', 'ИМТ', 'Комментарий']];
   entries.forEach(e => {
     const bmi = (height && e.weight !== '') ? calcBMI(e.weight, height) : null;
     rows.push([
@@ -1551,11 +1637,15 @@ function exportMeasurementsCSV(){
       e.weight !== '' ? f1(e.weight) : '',
       e.waist !== '' ? f1(e.waist) : '',
       e.hips !== '' ? f1(e.hips) : '',
+      e.bodyFat !== '' ? f1(e.bodyFat) : '',
+      e.muscle !== '' ? f1(e.muscle) : '',
+      e.water !== '' ? f1(e.water) : '',
+      e.visceral !== '' ? f0(e.visceral) : '',
       bmi != null ? f2(bmi) : '',
       e.note || ''
     ]);
   });
-  const csv = '\uFEFF' + rows.map(r => r.map(v => '"' + String(v).replace(/"/g, '""') + '"').join(';')).join('\r\n');
+  const csv = '\uFEFF' + rows.map(r => r.map(csvCell).join(';')).join('\r\n');
   downloadText('izmereniya-' + toDateKey(new Date()) + '.csv', csv, 'text/csv;charset=utf-8');
   showToast('CSV с измерениями скачан', 'success');
 }
@@ -1712,6 +1802,7 @@ async function saveProgram(){
     state.data.program = deepClone(d);
   } else { state.data.program = deepClone(d); }
   ensureIds(state.data.program);
+  enrichProgramMetadata(state.data.program);
   saveData(); state.editDraft = null; state.uploadImage = null; state.editMode = 'current'; state.view = 'home'; render(); showToast('Программа сохранена', 'success');
 }
 
@@ -1719,18 +1810,29 @@ function cancelEdit(){
   state.editDraft = null; state.uploadImage = null; state.editMode = 'current'; state.view = 'home'; render();
 }
 
-function exportBackup(){
+async function exportBackup(){
   state.data.meta.lastBackupAt = new Date().toISOString();
   saveData();
 
-  const data = { version: 1, exportedAt: new Date().toISOString(), app: 'training-diary', program: state.data.program, programArchive: state.data.programArchive, history: state.data.history, body: state.data.body, meta: state.data.meta };
-  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url; a.download = 'trenirovki-backup-' + toDateKey(new Date()) + '.json';
-  document.body.appendChild(a); a.click(); a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
-  showToast('Резервная копия скачана', 'success');
+  const photosData = [];
+  if (typeof mediaGet === 'function' && typeof blobToDataURL === 'function'){
+    for (const p of (state.data.photos || [])){
+      try {
+        const blob = await mediaGet(p.id);
+        if (blob) photosData.push({ id: p.id, dataUrl: await blobToDataURL(blob) });
+      } catch (_) {}
+    }
+  }
+
+  const aiForBackup = Object.assign({}, state.data.ai, { apiKey: '' });
+  const data = {
+    version: 2, exportedAt: new Date().toISOString(), app: 'training-diary',
+    program: state.data.program, programArchive: state.data.programArchive, history: state.data.history,
+    body: state.data.body, nutrition: state.data.nutrition, inventory: state.data.inventory,
+    photos: state.data.photos, photosData, ai: aiForBackup, meta: state.data.meta
+  };
+  downloadText('trenirovki-backup-' + toDateKey(new Date()) + '.json', JSON.stringify(data), 'application/json');
+  showToast('Резервная копия скачана' + (photosData.length ? ' (включая ' + photosData.length + ' фото)' : ''), 'success');
   render();
 }
 
@@ -1743,6 +1845,7 @@ function validateBackup(data){
     for (const ex of day.exercises){ if (!ex.name || typeof ex.sets !== 'number') return 'Повреждена структура упражнения.'; }
   }
   if (data.body && typeof data.body === 'object' && data.body.entries && !Array.isArray(data.body.entries)) return 'Повреждён раздел измерений тела.';
+  if (data.nutrition && typeof data.nutrition === 'object' && data.nutrition.entries && !Array.isArray(data.nutrition.entries)) return 'Повреждён дневник питания.';
   return null;
 }
 
@@ -1758,6 +1861,8 @@ function handleImportFile(file){
           <div><strong>Программа:</strong> ${escapeHtml(data.program.name || '—')} (${data.program.days.length} дней)</div>
           <div><strong>Записей истории:</strong> ${data.history.length}</div>
           <div><strong>Измерений тела:</strong> ${data.body && Array.isArray(data.body.entries) ? data.body.entries.length : 'нет в файле — останутся текущие'}</div>
+          <div><strong>Записей питания:</strong> ${data.nutrition && Array.isArray(data.nutrition.entries) ? data.nutrition.entries.length : 'нет в файле — останутся текущие'}</div>
+          <div><strong>Фото:</strong> ${Array.isArray(data.photos) ? data.photos.length : 0} ${Array.isArray(data.photosData) && data.photosData.length ? '(с изображениями)' : '(без изображений)'}</div>
           <div><strong>Экспортирован:</strong> ${data.exportedAt ? fmtDateTime(data.exportedAt) : '—'}</div>
         </div>`;
       $('#importPreview').innerHTML = preview;
@@ -1772,14 +1877,43 @@ async function askImportConfirmation(data){
   if (!ok) return;
   state.data.program = data.program; state.data.programArchive = data.programArchive || []; state.data.history = data.history;
   if (data.body) state.data.body = normalizeBody(data.body); else ensureBody();
-  state.data.meta = data.meta || state.data.meta; ensureIds(state.data.program); state.data.activeWorkout = null;
+  if (data.nutrition) state.data.nutrition = normalizeNutrition(data.nutrition);
+  if (data.inventory) state.data.inventory = normalizeInventory(data.inventory);
+  if (data.ai){
+    const currentKey = state.data.ai ? state.data.ai.apiKey : '';
+    state.data.ai = normalizeAI(Object.assign({}, data.ai, { apiKey: currentKey }));
+  }
+  if (Array.isArray(data.photos)){
+    const restored = new Set();
+    if (Array.isArray(data.photosData) && typeof mediaPut === 'function' && typeof fetch === 'function'){
+      for (const item of data.photosData){
+        if (!item || !item.id || !item.dataUrl) continue;
+        try {
+          const res = await fetch(item.dataUrl);
+          const blob = await res.blob();
+          await mediaPut(item.id, blob);
+          restored.add(item.id);
+          if (typeof forgetPhotoUrl === 'function') forgetPhotoUrl(item.id);
+        } catch (_) {}
+      }
+    }
+    // Импортируем только те фото, для которых реально восстановились изображения.
+    state.data.photos = normalizePhotos(data.photos).filter(p => restored.has(p.id));
+  }
+  state.data.meta = data.meta || state.data.meta;
+  enrichProgramMetadata(state.data.program);
+  ensureIds(state.data.program); state.data.activeWorkout = null;
   saveData(); state.view = 'home'; render(); showToast('Данные импортированы', 'success');
 }
 
 async function resetAll(){
-  const ok = await confirmDialog('Сбросить все данные?', 'Будут удалены программа, история и архив. Рекомендуется сначала экспортировать резервную копию. Продолжить?', 'Удалить всё', true);
+  const ok = await confirmDialog('Сбросить все данные?', 'Будут удалены программа, история, питание, измерения и фото. Рекомендуется сначала экспортировать резервную копию. Продолжить?', 'Удалить всё', true);
   if (!ok) return;
-  localStorage.removeItem(STORAGE_KEY); location.reload();
+  localStorage.removeItem(STORAGE_KEY);
+  if (typeof indexedDB !== 'undefined'){
+    try { indexedDB.deleteDatabase(MEDIA_DB_NAME); } catch (_) {}
+  }
+  location.reload();
 }
 
 /* ==================== ОБРАБОТЧИКИ ==================== */
@@ -1793,6 +1927,8 @@ async function handleClick(e){
   const t = e.target.closest('[data-action]');
   if (!t) return;
   const action = t.dataset.action;
+
+  if (typeof handleFeatureAction === 'function' && handleFeatureAction(action, t)) return;
 
   switch(action){
     case 'nav':
@@ -1882,6 +2018,7 @@ function saveHistoryEdit(){
 function handleInput(e){
   const t = e.target;
   const f = t.getAttribute && t.getAttribute('data-field');
+  if (typeof handleFeatureInput === 'function' && handleFeatureInput(f, t)) return;
   if (!f) return;
 
   if (f.startsWith('profile-')) return; // профиль сохраняется на change (после ввода)
@@ -1917,9 +2054,10 @@ function handleInput(e){
   }
 }
 
-function handleChange(e){
+async function handleChange(e){
   const t = e.target;
   const field = t.getAttribute && t.getAttribute('data-field');
+  if (typeof handleFeatureChange === 'function' && await handleFeatureChange(field, t)) return;
   if (field && PROFILE_FIELD_MAP[field]){ commitProfileField(field, t.value); return; }
   if (field === 'm-date'){ ensureMeasureDraft().date = t.value; return; }
   const action = t.getAttribute && t.getAttribute('data-action');
@@ -1955,7 +2093,7 @@ function renderPreserveFocus(){
 function init(){
   initData();
   const hashView = String((window.location && window.location.hash) || '').replace(/^#/, '');
-  if (['body', 'history', 'backup', 'upload'].includes(hashView)) state.view = hashView;
+  if (['home', 'trainer', 'nutrition', 'body', 'history', 'backup', 'upload'].includes(hashView)) state.view = hashView;
   document.addEventListener('click', handleClick);
   document.addEventListener('input', handleInput);
   document.addEventListener('change', handleChange);

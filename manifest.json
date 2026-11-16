@@ -12,7 +12,9 @@
     { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
   ],
   "shortcuts": [
-    { "name": "Записать вес и талию", "short_name": "Вес", "url": "./index.html#body", "description": "Открыть дневник веса, талии и ИМТ" },
+    { "name": "Тренер", "short_name": "Тренер", "url": "./index.html#trainer", "description": "Прогрессия, объём и инвентарь" },
+    { "name": "Питание", "short_name": "Питание", "url": "./index.html#nutrition", "description": "Дневник калорий и БЖУ" },
+    { "name": "Записать вес и талию", "short_name": "Вес", "url": "./index.html#body", "description": "Дневник веса, талии и ИМТ" },
     { "name": "История тренировок", "short_name": "История", "url": "./index.html#history", "description": "Открыть историю тренировок" }
   ]
 }
